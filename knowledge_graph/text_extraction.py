@@ -1,105 +1,144 @@
-# text_extraction.py    
-import os
-import fitz  # PyMuPDF for PDF
-from pptx import Presentation
+# text_extraction.py
+from file_storage import StorageAdapter
+from resource_db import ResourceDB
+from chunking import chunk_extracted_content
 import logging
+from typing import List, Dict
+from pptx import Presentation
+import fitz 
+from typing import BinaryIO
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def extract_text_from_pdf(file_path):
-    """Extract text from PDF file."""
-    try:
-        doc = fitz.open(file_path)
-        text = ""
-        for page in doc:
-            text += page.get_text() + "\n"
-        doc.close()
-        return text
-    except Exception as e:
-        logger.error(f"Error extracting text from PDF {file_path}: {e}")
-        return ""
-
-def extract_text_from_pptx(file_path):
-    """Extract text from PowerPoint file."""
-    try:
-        prs = Presentation(file_path)
-        text = ""
-        for slide_num, slide in enumerate(prs.slides, 1):
-            slide_text = f"\n--- Slide {slide_num} ---\n"
-            for shape in slide.shapes:
-                if hasattr(shape, "text") and shape.text.strip():
-                    slide_text += shape.text + "\n"
-            text += slide_text
-        return text
-    except Exception as e:
-        logger.error(f"Error extracting text from PPTX {file_path}: {e}")
-        return ""
-
-def extract_texts_from_folder(folder_path):
-    """Extract text from all supported files in a folder."""
-    if not os.path.exists(folder_path):
-        logger.error(f"Folder does not exist: {folder_path}")
-        return {}
+class ResourceProcessor:
+    def __init__(self, storage_config: dict, db_path: str = "knowledge_graph/resources.db"):
+        self.storage = StorageAdapter(storage_config)
+        self.db = ResourceDB(db_path)
     
-    extracted_texts = {}
-    supported_extensions = {'.pdf', '.pptx'}
-    
-    for filename in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, filename)
-        
-        # Skip directories
-        if os.path.isdir(file_path):
-            continue
-            
-        file_ext = os.path.splitext(filename)[1].lower()
-        
-        if file_ext == '.pdf':
-            logger.info(f"Extracting text from PDF: {filename}")
-            text = extract_text_from_pdf(file_path)
-            if text.strip():  # Only add if text is not empty
-                extracted_texts[filename] = text
+    def process_new_resources(self):
+        pending_resources = self.db.get_pending_resources()
+        for resource in pending_resources:
+            try:
+                self.db.update_processing_status(resource['id'], 'processing')
                 
-        elif file_ext == '.pptx':
-            logger.info(f"Extracting text from PPTX: {filename}")
-            text = extract_text_from_pptx(file_path)
-            if text.strip():
-                extracted_texts[filename] = text
+                # Download file from cloud storage
+                file_data = self.storage.download_file(resource['file_name'])
                 
-        elif file_ext not in supported_extensions:
-            logger.info(f"Skipped unsupported file: {filename}")
+                # Process based on file type - ADD THIS FUNCTION
+                if resource['file_name'].lower().endswith('.pdf'):
+                    pages = self.extract_text_from_pdf(file_data)
+                elif resource['file_name'].lower().endswith('.pptx'):
+                    pages = self.extract_text_from_pptx(file_data)
+                else:
+                    logger.warning(f"Unsupported file type: {resource['file_name']}")
+                    continue
+                
+                # Prepare for chunking (add source_file reference)
+                for page in pages:
+                    page['source_file'] = resource['file_name']
+                
+                # Chunk content
+                chunked_content = chunk_extracted_content(
+                    {resource['file_name']: pages}, 
+                    strategy="semantic"
+                )
+                chunks = chunked_content.get(resource['file_name'], [])
+                
+                self.db.save_chunks(resource['id'], chunks)
+                self.db.update_processing_status(resource['id'], 'processed')
+                logger.info(f"Processed {resource['file_name']} with {len(chunks)} chunks")
+                
+            except Exception as e:
+                logger.error(f"Failed to process {resource['file_name']}: {e}")
+                self.db.update_processing_status(resource['id'], 'error')
 
-    return extracted_texts
+    def add_new_resource(self, file_name: str, file_type: str, file_data: BinaryIO, metadata: dict = None):
+        self.storage.upload_file(file_name, file_data)
+        resource_id = self.db.add_resource(file_name, file_type, metadata)
+        logger.info(f"Added new resource {file_name} with ID {resource_id}")
+        return resource_id
 
-def save_extracted_texts(extracted_texts, output_dir="./knowledge_graph/extracted_texts"):
-    """Save extracted texts to individual files for inspection."""
-    os.makedirs(output_dir, exist_ok=True)
-    
-    for filename, text in extracted_texts.items():
-        output_filename = os.path.splitext(filename)[0] + "_extracted.txt"
-        output_path = os.path.join(output_dir, output_filename)
-        
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(text)
-        logger.info(f"Saved extracted text to: {output_path}")
+    def extract_text_from_pdf(self, file_data: bytes) -> List[Dict]:
+        """Extract text from PDF with metadata"""
+        try:
+            doc = fitz.open(stream=file_data, filetype="pdf")
+            pages = []
+            for page_num, page in enumerate(doc, 1):
+                text = page.get_text()
+                if not text.strip():
+                    continue
+                    
+                # Add metadata
+                pages.append({
+                    "text": text,
+                    "page": page_num,
+                    "type": "text",
+                    "section": f"Page {page_num}"
+                })
+            doc.close()
+            return pages
+        except Exception as e:
+            logger.error(f"Error extracting PDF from stream: {e}")
+            return []
+
+    # In case got PPTX in the future
+    def extract_text_from_pptx(self, file_data: bytes) -> List[Dict]:
+        try:
+            from io import BytesIO
+            prs = Presentation(BytesIO(file_data))
+            slides = []
+            for slide_num, slide in enumerate(prs.slides, 1):
+                # Extract slide title
+                title = slide.shapes.title.text if slide.shapes.title else f"Slide {slide_num}"
+                
+                # Extract content with bullet hierarchy
+                content = []
+                for shape in slide.shapes:
+                    if not hasattr(shape, "text") or not shape.text.strip():
+                        continue
+                    if shape == slide.shapes.title:
+                        continue
+                    
+                    # Preserve bullet hierarchy
+                    indent_level = 0
+                    if shape.text_frame.paragraphs:
+                        indent_level = shape.text_frame.paragraphs[0].level
+                    content.append({
+                        "text": shape.text.strip(),
+                        "indent": indent_level,
+                        "type": "bullet"
+                    })
+                
+                # Extract speaker notes
+                notes = ""
+                if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                    notes = slide.notes_slide.notes_text_frame.text
+                
+                slides.append({
+                    "title": title,
+                    "content": content,
+                    "notes": notes,
+                    "slide": slide_num,
+                    "type": "slide",
+                    "section": title
+                })
+            return slides
+        except Exception as e:
+            logger.error(f"Error extracting PDF from stream: {e}")
+            return []
 
 if __name__ == "__main__":
-    folder_path = "./knowledge_graph/resource"
-    all_extracted = extract_texts_from_folder(folder_path)
+    # Configuration for local development
+    config = {
+        'storage_type': 'local',
+        'base_path': './knowledge_graph/resource'
+    }
     
-    if all_extracted:
-        logger.info(f"Successfully extracted text from {len(all_extracted)} files")
-        
-        # Preview extracted texts
-        for filename, text in all_extracted.items():
-            print(f"\n{'='*50}")
-            print(f"FILE: {filename}")
-            print(f"{'='*50}")
-            print(f"Length: {len(text)} characters")
-            print(f"Preview:\n{text[:500]}...")
-        
-        # Optionally save to files
-        save_extracted_texts(all_extracted)
-    else:
-        logger.warning("No texts were extracted")
+    processor = ResourceProcessor(config)
+    
+    # Add a new resource (simulating upload)
+    with open('new_design.pdf', 'rb') as f:
+        processor.add_new_resource('new_design.pdf', 'pdf', f)
+    
+    # Process all pending resources
+    processor.process_new_resources()
