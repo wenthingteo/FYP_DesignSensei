@@ -1,2 +1,5 @@
 .env
 .venv
+knowledge_graph.cypher
+knowledge_graph.json
+config.cpyhon-312.pyc
