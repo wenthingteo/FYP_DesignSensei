@@ -1,0 +1,222 @@
+Design Principles
+1
+
+Previous Code Convention Discussions
+• Style
+• What does the code look like?
+• Is it consistent, scalable, and maintainable?
+• Appearance, format, readability
+• Naming
+• How are we describing the identifiers in our code?
+• Are they understandable?
+• Do the names reflect purpose/responsibility?
+• Program comprehension
+2
+
+SOLID Principles for Object-Oriented Design
+• Five basic principles (guidelines) for Object-Oriented Design (OOD)
+• Results in systems that are:
+• Easy to maintain
+• Easy to extend
+• SOLID is a guide for:
+• Creating designs from scratch
+• Improving existing designs
+3
+
+SOILD Principles
+• Single Responsibility Principle (SRP)
+• Open/closed Principle (OCP)
+•Liskov Substitution Principle (LSP)
+•Interface Segregation Principle (ISP)
+•Dependency Inversion Principle (DIP)
+4
+
+Single Responsibility Principle
+• Every class should have A SINGLE RESPONSIBILITY
+• The responsibility of a class drives its need to change
+• Responsibility should be entirely encapsulated by the class
+• All functionality of the class should focus on that single responsibility
+• Why? 
+• More cohesive
+• Easier to understand
+• Easier to maintain
+5
+
+SRP Analysis
+• A basic method for determining if a method belongs with a given 
+class.
+• A rough approximation
+• Need to apply context about the domain and the abstraction
+The _[class name] 
+_[method name]_ itself. 
+6
+
+7
+
+8
+
+9
+
+SRP Example
+10
+
+SRP Example - Violation
+11
+
+SRP Example - Compliant
+12
+
+Open/Closed Principle
+• Software entities (classes, function, etc.) should be open for extension but 
+closed for modification
+• Closed - as can be compiled, stored in a library, and used by client classes
+• Open - as any new class can inherit and add new features
+• Why? 
+• Client code dependent on base (closed) class unaffected
+• Less testing
+• Less code to review
+13
+
+Meyer’s Open/Closed Principle
+• Implementation is extended through inheritance
+• “Open” means available for extension (generalization/inheritance)
+• “Closed” to avoid changes to the original class
+• New functionality by adding a new class, not changing current ones
+• Results in tight coupling between base and derived classes
+14
+
+Polymorphic Open/Closed Principle
+• Abstract base class and multiple implementations that we can 
+substitute for each other
+• Base design on abstract base classes
+• Focus on sharing the interface, not the implementation
+• “Code to an interface, not an implementation”
+• Reuse implementation via delegation
+«abstract»
+Parser
++parse()
+ParserImplementation
++parse()
+ParserRubyImplementation
++parse()
+15
+
+Liskov Substitution Principle
+• An Object in a program should be replaceable with an instance of subtypes 
+without affecting program correctness
+• “Objects of subtypes should behave like those of supertypes if used via supertype 
+methods.”
+• Preconditions cannot be strengthened in a subtype
+• Postconditions cannot be weakened in a subtype
+• Invariants of supertype must be preserved in subtype
+• History constraint - new methods in subtype cannot introduce state 
+changes in a way that is not permissible in the supertype
+• Why? 
+• Knowledge/assumptions about base class apply to the subclass
+• Easier to understand
+• Easier to maintain.
+16
+
+LSP Example
+17
+
+LSP Example - Violation
+18
+
+LSP Example
+19
+
+LSP Example
+20
+
+21
+
+Interface Segregation Principle
+• A client should NOT be forced to depend on methods it does not use
+• Having many client-specific interfaces is better than one general-
+purpose interface
+• Why?
+• More cohesive
+• Lower coupling
+• Easier to understand
+• Easier to maintain
+22
+
+ISP Example – How can we make this better?
+23
+
+ISP Example – How can we make this better?
+Bird
+#name: string
+FlyingBird
++fly()
+Ostrich
+Duck
+CREATED WITH YUML
+24
+
+Dependency Inversion Principle
+• Depend upon abstractions, not concretions (specific implementations 
+of an abstraction)
+• Abstractions should not depend on details, but details on abstractions
+• High-level modules are independent and should not depend on low-
+level modules
+• Why?
+• Lower coupling
+• Reuse
+• Easier to test
+• Easer to understand
+• Easier to maintain
+25
+
+DIP Example
+26
+
+DIP Example – Can We Do Better?
+27
+
+DIP Example – Can We Do Better?
+https://medium.com/@kedren.villena/simplifying-dependency-inversion-principle-dip-59228122649a
+Lamp
+#isOn: boolean
+#powerSource: OutletInterface
++turnOn()
++turnOff()
++changeOutlet(OutletInterface)
+<<OutletInterface>>
+DormOutlet
+GarageOutlet
+ClassroomOutlet
+CREATED WITH YUML
+28
+
+29
+
+Other Helpful Principles
+• DRY- Don’t Repeat Yourself
+• Use functional decomposition or abstractions to reduce redundancies
+• YAGNI – You Aren’t Gonna Need It
+• Don’t try to build out features now that you think your software MIGHT need 
+later
+• Software development is too volatile for that, focus on what is needed now 
+and the maintainability of your design
+• Occam’s Razor/KISS – Keep it simple
+• Don’t introduce unnecessary complexity or overblown designs
+• GRASP – General Responsibility Assignment Software Patterns
+• Design patterns that can help with your software design/implementation
+• More on design patterns later…
+30
+
+Conclusion
+• Meant to be applied together
+• Make it more likely that the system is easy to maintain and extend 
+over time
+• SOLID principles are guidelines
+• Do not guarantee success
+• Can be misused
+• Use in conjunction with other principles
+• Don’t chase perfection
+• Design based on your needs 
+• Good enough design gets software delivered
+31
+
