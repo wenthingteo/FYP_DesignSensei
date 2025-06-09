@@ -2,142 +2,168 @@
 
 {% block styles %}
 <style>
-    body, html {
-      height: 100%;
-    }
+  body, html {
+    height: 100%;
+  }
 
-    .messages-box {
-      flex: 1;
-      overflow-y: auto;
-    }
+  .container-wrapper {
+    display: flex;
+    height: 100%;
+  }
 
-    .messages-list {
-      padding-left: 0;
-    }
+  .sidebar {
+    width: 250px;
+    background-color: #f8f9fa;
+    border-right: 1px solid #ddd;
+    padding: 10px;
+    overflow-y: auto;
+  }
 
-    .message {
-      margin-bottom: 15px;
-      list-style: none;
-    }
+  .conversation-list {
+    display: flex;
+    flex-direction: column;
+  }
 
-    .message-text {
-      padding: 10px;
-      border-radius: 5px;
-    }
+  .conversation-item {
+    display: block; /* ✅ Ensure each conversation is on a new line */
+    padding: 8px;
+    margin-bottom: 5px;
+    background-color: #e9ecef;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    color: black;
+  }
 
-    .sent {
-      background-color: #dcf8c6;
-      align-self: flex-end;
-    }
+  .conversation-item:hover {
+    background-color: #dee2e6;
+  }
 
-    .received {
-      background-color: #f1f0f0;
-      align-self: flex-start;
-    }
+  .chat-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
 
-    .message-form {
-      display: flex;
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      padding: 10px;
-      background-color: #f8f9fa;
-    }
+  .messages-box {
+    flex: 1;
+    overflow-y: auto;
+  }
 
-    .message-input {
-      flex: 1;
-      border-radius: 0;
-      border-right: none;
-    }
+  .messages-list {
+    padding-left: 0;
+  }
 
-    .btn-send {
-      border-radius: 0;
-    }
+  .message {
+    margin-bottom: 15px;
+    list-style: none;
+  }
 
-    .chat-container {
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-    }
-  </style>
+  .message-text {
+    padding: 10px;
+    border-radius: 5px;
+  }
+
+  .sent {
+    background-color: #dcf8c6;
+    align-self: flex-end;
+  }
+
+  .received {
+    background-color: #f1f0f0;
+    align-self: flex-start;
+  }
+
+  .message-form {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 250px;
+    right: 0;
+    padding: 10px;
+    background-color: #f8f9fa;
+  }
+
+  .message-input {
+    flex: 1;
+    border-radius: 0;
+    border-right: none;
+  }
+
+  .btn-send {
+    border-radius: 0;
+  }
+</style>
 {% endblock %}
 
-
 {% block content %}
-<div class="chat-container">
-  <div class="card flex-grow-1">
-    <div class="card-header bg-primary text-white">Chat</div>
-    {% if user.is_authenticated %}
-    <div class="card-header bg-primary text-white">
-      <b>Welcome, {{user.username}}</b>  
-      <a style="color: yellow" href="logout">Logout</a>
+<div class="container-wrapper">
+  <div class="sidebar">
+    <h4>Conversations</h4>
+    <form method="POST" action="{% url 'new_conversation' %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-success mb-3">+ New Conversation</button>
+    </form>
+    <div class="conversation-list">
+      {% for convo in conversations %}
+        <a href="?cid={{ convo.id }}" class="conversation-item">
+          {{ convo.title|default:"New Conversation" }}
+        </a>
+      {% endfor %}
     </div>
-    {% else %}
-    <div class="card-header bg-primary text-white">
-      <a style="color: yellow" href="login">Login</a>  
-      <a style="color: yellow" href="register">Register</a>
-    </div>
-    {% endif %}
-    <div class="card-body messages-box">
-      
-      <ul class="list-unstyled messages-list">
-        
-        {% comment %} <li class="message received">
-          <div class="message-text">
-            <div class="message-sender">
-              <b>AI Chatbot</b>
-            </div>
-            <div class="message-content">
-              Hi {{user.username}}, I am your AI Chatbot, you can ask me anything.
-            </div>
-          </div>
-        </li> {% endcomment %}
-
-        {% for chat in chats %}
-          {% if chat.user == request.user %}
-
-            <li class="message sent">
-              <div class="message-text">
-                <div class="message-sender">
-                  <b>You</b>
-                </div>
-                <div class="message-content">
-                  {{chat.message}}
-                </div>
-              </div>
-            </li>
-
-            <li class="message received">
-              <div class="message-text">
-                <div class="message-sender">
-                  <b>AI Chatbot</b>
-                </div>
-                <div class="message-content">
-                  {{chat.response}}
-                </div>
-              </div>
-            </li>
-
-          {% endif %}
-        {% endfor %}
-
-      </ul>
-      
-    </div>
-    <br><br>
-    <br><br>
-    <br><br>
+    <a href="{% url 'feedback' %}">Send Feedback</a>
   </div>
-  <form class="message-form">
-    {%csrf_token%}
-    <div class="input-group">
-      <input type="text" class="form-control message-input" name="message" placeholder="Type your message...">
-      <div class="input-group-append">
-        <button type="submit" class="btn btn-primary btn-send">Send</button>
+
+  <div class="chat-container">
+    <div class="card flex-grow-1">
+      <div class="card-header bg-primary text-white">
+        Chat - {{ current_conversation.title|default:"New Conversation" }}
       </div>
+      {% if user.is_authenticated %}
+      <div class="card-header bg-primary text-white">
+        <b>Welcome, {{user.username}}</b>  
+        <a style="color: yellow" href="{% url 'logout' %}">Logout</a>
+      </div>
+      {% else %}
+      <div class="card-header bg-primary text-white">
+        <a style="color: yellow" href="{% url 'login' %}">Login</a>  
+        <a style="color: yellow" href="{% url 'register' %}">Register</a>
+      </div>
+      {% endif %}
+      <div class="card-body messages-box">
+        <ul class="list-unstyled messages-list">
+          {% for msg in messages %}
+            {% if msg.sender == user.username %}
+              <li class="message sent">
+                <div class="message-text">
+                  <div class="message-sender"><b>You</b></div>
+                  <div class="message-content">{{ msg.content }}</div>
+                </div>
+              </li>
+            {% else %}
+              <li class="message received">
+                <div class="message-text">
+                  <div class="message-sender"><b>{{ msg.sender }}</b></div>
+                  <div class="message-content">{{ msg.content }}</div>
+                </div>
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      </div>
+      <br><br><br><br><br><br>
     </div>
-  </form>
+
+    <form class="message-form">
+      {% csrf_token %}
+      <div class="input-group">
+        <input type="text" class="form-control message-input" name="message" placeholder="Type your message...">
+        <div class="input-group-append">
+          <button type="submit" class="btn btn-primary btn-send">Send</button>
+        </div>
+      </div>
+    </form>
+  </div>
 </div>
 
 <script>
@@ -147,24 +173,17 @@
 
   messageForm.addEventListener('submit', (event) => {
     event.preventDefault();
-
     const message = messageInput.value.trim();
-    if (message.length === 0){
-      return;
-    }
+    if (message.length === 0) return;
 
-    const messageItem = document.createElement('li');
-    messageItem.classList.add('message', 'sent');
-    messageItem.innerHTML = `
+    const userMessageItem = document.createElement('li');
+    userMessageItem.classList.add('message', 'sent');
+    userMessageItem.innerHTML = `
         <div class="message-text">
-          <div class="message-sender">
-            <b>You</b>
-          </div>
-          <div class="message-content">
-            ${message}
-          </div>
+          <div class="message-sender"><b>You</b></div>
+          <div class="message-content">${message}</div>
         </div>`;
-    messagesList.appendChild(messageItem);
+    messagesList.appendChild(userMessageItem);
 
     messageInput.value = '';
 
@@ -176,24 +195,23 @@
         'message': message
       })
     })
-      .then(response => response.json())
-      .then(data => {
-        const response = data.response;
-        const messageItem = document.createElement('li');
-        messageItem.classList.add('message', 'received');
-        messageItem.innerHTML = `
-            <div class="message-text">
-              <div class="message-sender">
-                <b>AI Chatbot</b>
-              </div>
-              <div class="message-content">
-                ${response}
-              </div>
-            </div>`;
-        messagesList.appendChild(messageItem);
-      });
+    .then(response => response.json())
+    .then(data => {
+      const response = data.response;
+      const aiMessageItem = document.createElement('li');
+      aiMessageItem.classList.add('message', 'received');
+      aiMessageItem.innerHTML = `
+          <div class="message-text">
+            <div class="message-sender"><b>AI Chatbot</b></div>
+            <div class="message-content">${response}</div>
+          </div>`;
+      messagesList.appendChild(aiMessageItem);
+
+      // ✅ Reload to reflect updated title in sidebar
+      setTimeout(() => {
+        location.reload();
+      }, 300);
+    });
   });
-
 </script>
-
 {% endblock %}

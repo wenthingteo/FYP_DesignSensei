@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-5">
+  <h2>Feedback</h2>
+  {% if success %}
+    <div class="alert alert-success">Thank you for your feedback!</div>
+  {% endif %}
+  <form method="POST">
+    {% csrf_token %}
+    <div class="form-group">
+      <label for="comment">Your feedback:</label>
+      <textarea class="form-control" id="comment" name="comment" rows="5" required></textarea>
+    </div>
+    <br>
+    <button type="submit" class="btn btn-primary">Submit Feedback</button>
+  </form>
+</div>
+{% endblock %}
