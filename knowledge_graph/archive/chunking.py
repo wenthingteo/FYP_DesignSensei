@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple
 import nltk
 from nltk.tokenize import sent_tokenize
 from multiprocessing import Pool, cpu_count
-from domain_config import DOMAIN_FOCUS
+from knowledge_graph.archive.domain_config import DOMAIN_FOCUS
 
 # Download required NLTK data
 nltk.download('punkt', quiet=True)

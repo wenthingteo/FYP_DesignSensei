@@ -1,7 +1,7 @@
 # api.py
 # for Django
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from text_extraction import ResourceProcessor
+from knowledge_graph.archive.text_extraction import ResourceProcessor
 from config import STORAGE_CONFIG, DB_PATH
 
 app = FastAPI()

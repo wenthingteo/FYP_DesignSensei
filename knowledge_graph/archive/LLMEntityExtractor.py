@@ -11,7 +11,7 @@ from openai import OpenAI, RateLimitError, AsyncOpenAI
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from json_repair import repair_json
-from domain_config import DOMAIN_FOCUS 
+from knowledge_graph.archive.domain_config import DOMAIN_FOCUS 
 import concurrent.futures
 from multiprocessing import cpu_count
 from neo4j import GraphDatabase
