@@ -1,6 +1,8 @@
 from celery import shared_task
 from core import models
 
+# not used
+
 @shared_task
 def handle_ai_request_job(ai_request_id):
     models.AIRequest.objects.get(id=ai_request_id).handle()
