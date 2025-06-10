@@ -6,12 +6,6 @@ STORAGE_CONFIG = {
     'base_path': './knowledge_graph/resource'
 }
 
-NEO4J_CONFIG = {
-    'uri': "neo4j+s://025d7462.databases.neo4j.io",
-    'user': "neo4j",
-    'password': "D26smsX1j8nNNlAsf5jKANwlfcm0K94vh6dFY2o9dj0",
-    'database': "neo4j"
-}
 # For production
 STORAGE_CONFIG = {
     'storage_type': 's3',

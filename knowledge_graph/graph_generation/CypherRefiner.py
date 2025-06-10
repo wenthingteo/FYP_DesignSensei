@@ -1,12 +1,13 @@
 """
-Enhanced Semantic Cypher Refiner
+Enhanced Semantic Cypher Refiner with Duplicate Handling and Relevance Score Preservation
 Combines weak relationship replacement with comprehensive semantic relationship enrichment
-for software architecture knowledge graphs
+for software architecture knowledge graphs while maintaining data integrity
 """
 
 import os
 import re
 import json
+import hashlib
 from typing import List, Dict, Set, Tuple
 from collections import defaultdict
 
@@ -80,13 +81,13 @@ class ComprehensiveSemanticMappings:
         }
 
 class EnhancedCypherRefiner:
-    """Enhanced Cypher refiner that replaces weak relationships and adds semantic ones"""
+    """Enhanced Cypher refiner that handles duplicates and preserves relevance scores"""
     
     def __init__(self, cypher_file_path: str):
         self.cypher_file_path = cypher_file_path
         self.mappings = ComprehensiveSemanticMappings()
-        self.existing_nodes = {}  # name -> {label, properties}
-        self.existing_relationships = {}  # (source, target) -> {type, properties}
+        self.existing_nodes = {}  # name -> {label, properties, all_props}
+        self.existing_relationships = {}  # (source, target, type) -> {properties, count}
         self.entity_classifications = {}  # name -> classification
         
         self.load_existing_graph()
@@ -100,31 +101,86 @@ class EnhancedCypherRefiner:
         with open(self.cypher_file_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # Extract nodes with enhanced pattern matching
+        # Extract nodes with enhanced pattern matching and property preservation
         node_pattern = r'MERGE \(:(\w+)\s*\{\s*name:\s*"([^"]+)"([^}]*)\}\);'
         node_matches = re.findall(node_pattern, content, re.IGNORECASE)
         
         for label, name, properties in node_matches:
-            self.existing_nodes[name] = {
-                'label': label,
-                'properties': properties.strip()
-            }
+            props_str = properties.strip()
+            # Parse properties to preserve relevance_score and other important data
+            parsed_props = self._parse_properties(props_str)
+            
+            if name not in self.existing_nodes:
+                self.existing_nodes[name] = {
+                    'label': label,
+                    'properties': props_str,
+                    'parsed_props': parsed_props,
+                    'count': 1
+                }
+            else:
+                # Handle duplicate nodes by merging properties
+                self.existing_nodes[name]['count'] += 1
+                # Merge properties, keeping the one with higher relevance_score if available
+                existing_relevance = self.existing_nodes[name]['parsed_props'].get('relevance_score', 0)
+                new_relevance = parsed_props.get('relevance_score', 0)
+                if new_relevance > existing_relevance:
+                    self.existing_nodes[name]['properties'] = props_str
+                    self.existing_nodes[name]['parsed_props'] = parsed_props
+            
             # Classify the entity
             self.entity_classifications[name] = self._classify_entity(name, label)
         
-        # Extract existing relationships with enhanced pattern
+        # Extract existing relationships with duplicate handling
         rel_pattern = r'MATCH \(s \{name:\s*"([^"]+)"\}\),\s*\(t \{name:\s*"([^"]+)"\}\)\s*MERGE \(s\)-\[:(\w+)([^]]*)\]->\(t\);'
         rel_matches = re.findall(rel_pattern, content, re.IGNORECASE | re.DOTALL)
         
         for source, target, rel_type, properties in rel_matches:
-            key = (source, target)
-            self.existing_relationships[key] = {
-                'type': rel_type,
-                'properties': properties.strip()
-            }
+            key = (source, target, rel_type)
+            props_str = properties.strip()
+            
+            if key not in self.existing_relationships:
+                self.existing_relationships[key] = {
+                    'properties': props_str,
+                    'parsed_props': self._parse_properties(props_str),
+                    'count': 1
+                }
+            else:
+                self.existing_relationships[key]['count'] += 1
         
-        print(f"Loaded {len(self.existing_nodes)} existing nodes")
-        print(f"Loaded {len(self.existing_relationships)} existing relationships")
+        print(f"Loaded {len(self.existing_nodes)} unique nodes (with {sum(n['count'] for n in self.existing_nodes.values())} total occurrences)")
+        print(f"Loaded {len(self.existing_relationships)} unique relationships (with {sum(r['count'] for r in self.existing_relationships.values())} total occurrences)")
+    
+    def _parse_properties(self, props_str: str) -> Dict:
+        """Parse property string into dictionary"""
+        if not props_str or not props_str.strip():
+            return {}
+        
+        props = {}
+        # Remove leading comma and whitespace
+        props_str = props_str.lstrip(', ')
+        
+        # Simple property parsing (handles basic cases)
+        prop_pattern = r'(\w+):\s*"([^"]*)"|\b(\w+):\s*([^,}]+)'
+        matches = re.findall(prop_pattern, props_str)
+        
+        for match in matches:
+            if match[0] and match[1]:  # String value
+                key, value = match[0], match[1]
+            elif match[2] and match[3]:  # Non-string value
+                key, value = match[2], match[3].strip()
+                # Try to convert to appropriate type
+                try:
+                    if '.' in value:
+                        value = float(value)
+                    else:
+                        value = int(value)
+                except ValueError:
+                    pass
+            else:
+                continue
+            props[key] = value
+        
+        return props
     
     def _classify_entity(self, name: str, label: str) -> str:
         """Classify entity based on name and label"""
@@ -230,7 +286,7 @@ class EnhancedCypherRefiner:
             reverse_type = reverse_relations.get(rel_type, f"INVERSE_OF_{rel_type}")
             return {
                 'type': reverse_type,
-                'strength': strength * 0.9,  # Slightly lower confidence for reverse
+                'strength': strength * 0.9,
                 'description': f"Reverse: {description}",
                 'confidence': 0.8
             }
@@ -297,11 +353,9 @@ class EnhancedCypherRefiner:
         """Identify and replace weak relationships with semantic ones"""
         replacements = []
         
-        for (source, target), rel_data in self.existing_relationships.items():
-            current_type = rel_data['type']
-            
+        for (source, target, rel_type), rel_data in self.existing_relationships.items():
             # Check if this is a weak relationship
-            if current_type in self.mappings.weak_patterns:
+            if rel_type in self.mappings.weak_patterns:
                 # Find semantic replacement
                 new_relationship = self.find_semantic_relationship(source, target)
                 
@@ -310,12 +364,13 @@ class EnhancedCypherRefiner:
                     replacements.append({
                         'source': source,
                         'target': target,
-                        'old_type': current_type,
+                        'old_type': rel_type,
                         'new_type': new_relationship['type'],
                         'strength': new_relationship['strength'],
                         'description': new_relationship['description'],
                         'confidence': new_relationship['confidence'],
-                        'old_properties': rel_data['properties']
+                        'old_properties': rel_data['properties'],
+                        'original_count': rel_data['count']
                     })
         
         return replacements
@@ -323,7 +378,7 @@ class EnhancedCypherRefiner:
     def generate_additional_relationships(self) -> List[Dict]:
         """Generate additional semantic relationships between existing entities"""
         new_relationships = []
-        existing_pairs = set(self.existing_relationships.keys())
+        existing_pairs = {(source, target) for source, target, _ in self.existing_relationships.keys()}
         
         # Get all node pairs that don't have relationships yet
         nodes = list(self.existing_nodes.keys())
@@ -348,70 +403,82 @@ class EnhancedCypherRefiner:
         return new_relationships
     
     def generate_enhanced_cypher(self, output_file: str = None) -> str:
-        """Generate enhanced Cypher file with semantic relationships"""
+        """Generate enhanced Cypher file with semantic relationships and no duplicates"""
         if output_file is None:
             base_name = os.path.splitext(self.cypher_file_path)[0]
-            output_file = f"{base_name}_semantically_enhanced.cypher"
+            output_file = f"{base_name}_semantically_enhanced_deduped.cypher"
         
         # Get replacements and new relationships
         replacements = self.replace_weak_relationships()
         new_relationships = self.generate_additional_relationships()
         
-        # Read original content
-        with open(self.cypher_file_path, 'r', encoding='utf-8') as f:
-            original_content = f.read()
-        
-        # Create enhanced content
-        enhanced_content = original_content
-        
-        # Replace weak relationships
-        for replacement in replacements:
-            source = replacement['source']
-            target = replacement['target']
-            old_type = replacement['old_type']
-            new_type = replacement['new_type']
-            
-            # Pattern to match old relationship
-            old_pattern = f'MATCH \\(s \\{{name:\\s*"{re.escape(source)}"\\}}\\),\\s*\\(t \\{{name:\\s*"{re.escape(target)}"\\}}\\)\\s*MERGE \\(s\\)-\\[:{old_type}[^]]*\\]->\\(t\\);'
-            
-            # New relationship
-            new_query = f'''MATCH (s {{name: "{source}"}})
-                           MATCH (t {{name: "{target}"}})
-                           MERGE (s)-[:{new_type} {{
-                               strength: {replacement['strength']},
-                               description: "{replacement['description']}",
-                               confidence: {replacement['confidence']},
-                               semantic_type: "enhanced",
-                               replaced_from: "{old_type}"
-                           }}]->(t);'''
-            
-            enhanced_content = re.sub(old_pattern, new_query, enhanced_content, flags=re.IGNORECASE | re.DOTALL)
-        
         # Write enhanced file
         with open(output_file, 'w', encoding='utf-8') as f:
-            f.write("// === SEMANTICALLY ENHANCED KNOWLEDGE GRAPH ===\n")
+            f.write("// === SEMANTICALLY ENHANCED KNOWLEDGE GRAPH (DEDUPLICATED) ===\n")
             f.write(f"// Enhanced by Comprehensive Semantic Refiner\n")
+            f.write(f"// Removed duplicates and preserved relevance scores\n")
             f.write(f"// Replaced {len(replacements)} weak relationships\n")
             f.write(f"// Added {len(new_relationships)} new semantic relationships\n\n")
             
-            f.write(enhanced_content)
+            # Write unique nodes with preserved properties
+            f.write("// === UNIQUE NODES ===\n")
+            for name, node_data in self.existing_nodes.items():
+                props_str = node_data['properties']
+                if props_str and not props_str.startswith(','):
+                    props_str = ', ' + props_str
+                
+                query = f'MERGE (:{node_data["label"]} {{ name: "{name}"{props_str} }});'
+                f.write(query + "\n")
+            
+            # Write relationships (original non-weak ones)
+            f.write("\n// === ORIGINAL RELATIONSHIPS (NON-WEAK) ===\n")
+            for (source, target, rel_type), rel_data in self.existing_relationships.items():
+                if rel_type not in self.mappings.weak_patterns:
+                    props_str = rel_data['properties']
+                    if props_str and not props_str.startswith('{'):
+                        props_str = ' {' + props_str + '}'
+                    elif not props_str:
+                        props_str = ''
+                    
+                    query = f'''MATCH (s {{name: "{source}"}}), (t {{name: "{target}"}})
+MERGE (s)-[:{rel_type}{props_str}]->(t);'''
+                    f.write(query + "\n")
+            
+            # Write replaced weak relationships
+            f.write("\n// === ENHANCED SEMANTIC RELATIONSHIPS (REPLACED WEAK ONES) ===\n")
+            for replacement in replacements:
+                query = f'''MATCH (s {{name: "{replacement['source']}"}})
+MATCH (t {{name: "{replacement['target']}"}})
+MERGE (s)-[:{replacement['new_type']} {{
+    strength: {replacement['strength']},
+    description: "{replacement['description']}",
+    confidence: {replacement['confidence']},
+    semantic_type: "enhanced",
+    replaced_from: "{replacement['old_type']}"
+}}]->(t);'''
+                f.write(query + "\n")
             
             # Add new semantic relationships
             if new_relationships:
-                f.write("\n\n// === ADDITIONAL SEMANTIC RELATIONSHIPS ===\n")
+                f.write("\n// === ADDITIONAL SEMANTIC RELATIONSHIPS ===\n")
                 for rel in new_relationships:
                     query = f'''MATCH (s {{name: "{rel['source']}"}})
-                               MATCH (t {{name: "{rel['target']}"}})
-                               MERGE (s)-[:{rel['type']} {{
-                                   strength: {rel['strength']},
-                                   description: "{rel['description']}",
-                                   confidence: {rel['confidence']},
-                                   source_type: "{rel['source_type']}"
-                               }}]->(t);'''
+MATCH (t {{name: "{rel['target']}"}})
+MERGE (s)-[:{rel['type']} {{
+    strength: {rel['strength']},
+    description: "{rel['description']}",
+    confidence: {rel['confidence']},
+    source_type: "{rel['source_type']}"
+}}]->(t);'''
                     f.write(query + "\n")
             
             # Add summary
             f.write(f"\n\n// === ENHANCEMENT SUMMARY ===\n")
+            f.write(f"// Unique Nodes: {len(self.existing_nodes)}\n")
+            f.write(f"// Original Relationships: {len([r for r in self.existing_relationships.keys() if r[2] not in self.mappings.weak_patterns])}\n")
+            f.write(f"// Weak Relationship Replacements: {len(replacements)}\n")
+            f.write(f"// New Semantic Relationships: {len(new_relationships)}\n")
+            
             f.write(f"// Weak Relationship Replacements:\n")
             for replacement in replacements:
                 f.write(f"// - {replacement['source']} -> {replacement['target']}: {replacement['old_type']} -> {replacement['new_type']}\n")
@@ -421,6 +488,7 @@ class EnhancedCypherRefiner:
                 f.write(f"// - {rel['source']} -> {rel['target']}: {rel['type']} (confidence: {rel['confidence']})\n")
         
         print(f"Enhanced Cypher file created: {output_file}")
+        print(f"Unique nodes: {len(self.existing_nodes)}")
         print(f"Replaced {len(replacements)} weak relationships")
         print(f"Added {len(new_relationships)} new semantic relationships")
         
