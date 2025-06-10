@@ -1,0 +1,66 @@
+=== SEMANTIC ENHANCEMENT REPORT ===
+
+NODES:
+  Total domains: 6
+  Total topics: 16935
+  Total nodes: 16941
+
+DOMAIN BREAKDOWN:
+  ArchPattern: 1754 topics
+  CodeStructure: 5132 topics
+  DDDConcept: 1949 topics
+  DesignPattern: 3332 topics
+  DesignPrinciple: 1373 topics
+  QualityAttribute: 3395 topics
+
+RELATIONSHIPS:
+  Domain-topic relationships: 16935
+  Original topic relationships: 29953
+  Semantically enhanced relationships: 6916
+  Total relationships: 53804
+
+SEMANTIC RELATIONSHIP TYPES:
+  AFFECTS: 111
+  APPLIES: 1
+  APPLIES_TO: 622
+  CONTRIBUTES_TO: 204
+  DEFINES: 474
+  DEMONSTRATES: 39
+  ENABLES: 1321
+  ENHANCES: 1
+  EXEMPLIFIES: 64
+  FOLLOWS: 21
+  GUIDES: 1318
+  IMPACTS: 131
+  IMPLEMENTS: 340
+  IMPROVES: 18
+  INVERSE_OF_APPLIES: 5
+  INVERSE_OF_APPLIES_TO: 106
+  INVERSE_OF_CONTRIBUTES_TO: 300
+  INVERSE_OF_DEFINES: 11
+  INVERSE_OF_ENHANCES: 1
+  INVERSE_OF_IMPROVES: 2
+  INVERSE_OF_MAXIMIZES: 2
+  INVERSE_OF_STRUCTURES: 22
+  IS_DEMONSTRATED_BY: 14
+  IS_ENABLED_BY: 199
+  IS_EXEMPLIFIED_BY: 2
+  IS_GUIDED_BY: 85
+  IS_IMPLEMENTED_BY: 8
+  IS_SUPPORTED_BY: 353
+  MAXIMIZES: 41
+  SHAPES: 492
+  STRUCTURES: 168
+  SUPPORTS: 440
+
+HIGH CONFIDENCE RELATIONSHIPS (>0.8): 35436
+  Polymorphic Open/Closed Principle -> Parser: EXEMPLIFIES (confidence: 0.9)
+  Polymorphic Open/Closed Principle -> Parser: EXEMPLIFIES (confidence: 0.9)
+  Polymorphic Open/Closed Principle -> Parser: EXEMPLIFIES (confidence: 0.9)
+  SOLID Principles -> Single Responsibility Principle (SRP): CONTAINS (confidence: 1.0)
+  SOLID Principles -> Open/Closed Principle (OCP): CONTAINS (confidence: 1.0)
+  SOLID Principles -> Liskov Substitution Principle (LSP): CONTAINS (confidence: 1.0)
+  SOLID Principles -> Interface Segregation Principle (ISP): CONTAINS (confidence: 1.0)
+  SOLID Principles -> Dependency Inversion Principle (DIP): CONTAINS (confidence: 1.0)
+  SOLID Principles -> Single Responsibility Principle (SRP): CONTAINS (confidence: 1.0)
+  SOLID Principles -> Open/Closed Principle (OCP): CONTAINS (confidence: 1.0)
