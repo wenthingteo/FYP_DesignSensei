@@ -11,10 +11,11 @@ rich==13.7.1
 # frontend
 axios
 react-router-dom
-npm install @fortawesome/fontawesome-svg-core
-npm install @fortawesome/free-solid-svg-icons
-npm install @fortawesome/react-fontawesome
+# @fortawesome/fontawesome-svg-core
+# @fortawesome/free-solid-svg-icons
+# @fortawesome/react-fontawesome
 bootstrap
+lottie-react
 
 # backend
 django-cors-headers
