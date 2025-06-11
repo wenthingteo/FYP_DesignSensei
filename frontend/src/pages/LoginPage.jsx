@@ -1,96 +1,72 @@
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import styled from 'styled-components';
-
-const Container = styled.div`
-    display: flex;
-    height: 100vh;
-    width: 100vw;
-    overflow: hidden;
-`;
-
-const LeftPanel = styled.div`
-    flex: 1;
-    display: flex;
-    fled-direction: column;
-    justify-content: center;
-    align-items: center;
-`;
-
-const RightPanel = styled.div`
-    flex: 1;
-    display: flex;
-    fled-direction: column;
-    justify-content: center;
-    align-items: center;
-    padding: 2rem;
-    background-color: white;
-`;
-
-const Title = styled.h1`
-    font-size: 16px;
-    color: white;
-    margin-bottom: 30px;
-`;
-
-const Divider = styled.div`
-    margin: 20px 0;
-    color: #ccc;
-    text-align: center;
-`;
-
-const BottomText = styled.p`
-    margin-top: 20px;
-    font-size: 14px;
-    color: #666;
-
-    a {
-        color: #5489fc;
-        font-weight: bold;
-        text-decoration: none;
-
-        &:hover {
-            text-decoration: underline;
-        }
-    }
-`;
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 function LoginPage() {
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const navigate = useNavigate();
 
-    return (
-        <Container>
-            <LeftPanel>
-                <Title>Design Sensei</Title>
-                <img src='./assets/Illustration.png' alt='Illustration' />
-            </LeftPanel>
+  const handleLogin = async (e) => {
+    e.preventDefault();
 
-            <RightPanel>
-                <Title>Login to your Account</Title>
-                <Glogin func={() => console.log("Google Login Selected")} />
-                <Divider>or Sign In With Email</Divider>
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/login/", {
+        method: "POST",
+        credentials: "include", // ⬅️ send cookies
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      });
 
-                <CustomInput
-                    title="Email"
-                    type="email"
-                    value={email}
-                    setValue={setEmail}
-                    placeholder="Enter your email address"
-                    size="100%"
-                />
+      const data = await response.json();
 
-                <CustomInput
-                    title="{Password}"
-                    type="password"
-                    value={password}
-                    setValue={setPassword}
-                    placeholder="Enter your password"
-                    size="100%"
-                />
-            </RightPanel>
-        </Container>
-    );
+      if (response.ok) {
+        console.log("Login success:", data);
+        navigate("/chatbot"); 
+      } else {
+        setErrorMsg(data.error || "Login failed");
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      setErrorMsg("Something went wrong. Please try again.");
+    }
+  };
+
+  return (
+    <div className="container mt-5" style={{ maxWidth: "400px" }}>
+      <h2 className="mb-4 text-center">Login</h2>
+      {errorMsg && <div className="alert alert-danger">{errorMsg}</div>}
+      <form onSubmit={handleLogin}>
+        <div className="mb-3">
+          <label className="form-label">Username</label>
+          <input
+            type="text"
+            className="form-control"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Password</label>
+          <input
+            type="password"
+            className="form-control"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
+
+        <button type="submit" className="btn btn-primary w-100">
+          Login
+        </button>
+      </form>
+    </div>
+  );
 }
 
 export default LoginPage;

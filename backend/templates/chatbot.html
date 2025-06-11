@@ -100,7 +100,7 @@
 <div class="container-wrapper">
   <div class="sidebar">
     <h4>Conversations</h4>
-    <form method="POST" action="{% url 'new_conversation' %}">
+    {% comment %} <form method="POST" action="{% url 'new_conversation' %}"> {% endcomment %}
       {% csrf_token %}
       <button type="submit" class="btn btn-success mb-3">+ New Conversation</button>
     </form>

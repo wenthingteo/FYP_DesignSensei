@@ -5,10 +5,13 @@
 .bg-grey-2 { background-color: #EEEEEE; }
 .bg-grey-3 { background-color: #E8E8E8; }
 .bg-grey-4 { background-color: #DDDDDD; }
-
+.bg-white { background-color: #FFFFFF; }
+.bg-black { background-color: #000000; }
 
 /* Text Colors */
 .text-blue { color: #3980D0; }
+.text-white { color: #FFFFFF; }
+.text-black { color: #000000; }
 .text-grey-dark { color: #525252; }
 .text-grey-light { color: #8F8F8F; }
 
