@@ -1,12 +1,16 @@
 import React from 'react';
-import ChatbotPage from './pages/ChatbotPage';
-import Sidebar from './components/Sidebar';
+import { BrowserRouter } from 'react-router-dom';
+import AppNav from './AppNav'
+import { ChatProvider } from './context/ChatContext';
+import SessionTest from './pages/SessionTest';
 
 function App() {
   return (
-    <>
-      <Sidebar />
-    </>
+    <BrowserRouter>
+      <ChatProvider>
+        <AppNav />
+      </ChatProvider>
+    </BrowserRouter>
   );
 }
 
