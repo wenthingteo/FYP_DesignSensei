@@ -1,6 +1,6 @@
 # text_extraction.py
-from knowledge_graph.archive.file_storage import StorageAdapter
-from knowledge_graph.archive.resource_db import ResourceDB
+from knowledge_graph.graph_generation.file_storage import StorageAdapter
+from knowledge_graph.graph_generation.resource_db import ResourceDB
 from chunking import chunk_extracted_content
 import logging
 from typing import List, Dict

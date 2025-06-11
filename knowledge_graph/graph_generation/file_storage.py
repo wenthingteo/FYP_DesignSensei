@@ -4,6 +4,7 @@ import boto3
 from azure.storage.blob import BlobServiceClient
 from google.cloud import storage
 from typing import BinaryIO, List
+from config import STORAGE_CONFIG
 
 class StorageAdapter:
     def __init__(self, config: dict):
