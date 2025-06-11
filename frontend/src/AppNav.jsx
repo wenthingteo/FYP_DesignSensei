@@ -1,33 +1,19 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route} from 'react-router-dom';
-import Chatbot from './pages/ChatbotPage';
-import Feedback from './pages/FeedbackPage';
-import Login from '..pages/LoginPage';
-import SignUp from './pages/RegisterPage';
+import LoginPage from './pages/LoginPage';
+import SignUpPage from './pages/RegisterPage';
+import ChatbotPage from './pages/ChatbotPage';
+import FeedbackPage from './pages/FeedbackPage';
 
 function AppNav() {
     return (
-        <>
-            <Router>
-                <Routes>
-                    <Route
-                        path='/'
-                        element={<Login />}
-                    />
-                    <Route
-                        path='/signup'
-                        element={<SignUp />}
-                    />
-                    <Route
-                        path='/chat'
-                        element={<Chatbot />}
-                    />
-                    <Route
-                        path='/feedback'
-                        element={<Feedback />}
-                    />
-                </Routes>
-            </Router>
-        </>
+        <Routes>
+            <Route path="/" element={<LoginPage />} />
+            <Route path="/signup" element={<SignUpPage />} />
+            <Route path="/chatbot" element={<ChatbotPage />} />
+            <Route path="/feedback" element={<FeedbackPage />} />
+        </Routes>
     );
 }
+
+export default AppNav;
