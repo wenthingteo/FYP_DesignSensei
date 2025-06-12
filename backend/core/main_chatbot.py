@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 load_dotenv() # This makes NEO4J_URI, etc., available to os.getenv()
 
 from knowledge_graph.connection.neo4j_client import Neo4jClient
-from search_module.graph_search import GraphSearch
+from search.graph_search import GraphSearch
 
 def main():
     neo4j_client = None # Initialize to None for finally block
@@ -44,5 +44,5 @@ def main():
             print("Closing Neo4j connection.")
             neo4j_client.close()
 
-if _name_ == "_main_":
+if __name__ == "_main_":
     main()

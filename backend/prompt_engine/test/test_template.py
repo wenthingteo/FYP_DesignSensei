@@ -8,9 +8,9 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.prompt_engine.templates.explanation_template import ExplanationTemplate
-from backend.prompt_engine.templates.comparison_template import ComparisonTemplate
-from backend.prompt_engine.test.mock_graph_results import get_mock_search_results
+from prompt_engine.templates.explanation_template import ExplanationTemplate
+from prompt_engine.templates.comparison_template import ComparisonTemplate
+from prompt_engine.test.mock_graph_results import get_mock_search_results
 
 def test_explanation_template():
     """Test explanation template with mock data"""

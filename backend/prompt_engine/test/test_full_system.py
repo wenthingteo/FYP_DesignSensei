@@ -1,7 +1,7 @@
 # Fixed test_full_system.py
-from backend.search_module.mock_search_module import MockSearchModule, MOCK_KNOWLEDGE_GRAPH_DATA
-from backend.prompt_engine.managers.prompt_manager import PromptManager
-from backend.prompt_engine.templates.base_template import UserExpertise, ResponseLength
+from search_module.mock_search_module import MockSearchModule, MOCK_KNOWLEDGE_GRAPH_DATA
+from prompt_engine.managers.prompt_manager import PromptManager
+from prompt_engine.templates.base_template import UserExpertise, ResponseLength
 import os
 
 # Initialize the mock search module
@@ -108,7 +108,7 @@ print("=" * 60)
 # Test the individual components
 print("\n1. Testing Intent Classifier...")
 try:
-    from backend.prompt_engine.intent_classifier import IntentClassifier
+    from prompt_engine.intent_classifier import IntentClassifier
     classifier = IntentClassifier()
     intent_result = classifier.classify_intent(user_question)
     print(f"✅ Intent classification successful: {intent_result}")
@@ -117,7 +117,7 @@ except Exception as e:
 
 print("\n2. Testing Template Factory...")
 try:
-    from backend.prompt_engine.templates.template_factory import TemplateFactory
+    from prompt_engine.templates.template_factory import TemplateFactory
     factory = TemplateFactory()
     template = factory.create_template('explanation')
     print(f"✅ Template creation successful: {template.__class__.__name__}")

@@ -2,11 +2,11 @@
 """
 Template classes for generating different types of educational content
 """
-from backend.prompt_engine.templates.base_template import BaseTemplate
-from backend.prompt_engine.templates.explanation_template import ExplanationTemplate
-from backend.prompt_engine.templates.comparison_template import ComparisonTemplate
-from backend.prompt_engine.templates.application_template import ApplicationTemplate
-from backend.prompt_engine.templates.analysis_template import AnalysisTemplate
+from prompt_engine.templates.base_template import BaseTemplate
+from prompt_engine.templates.explanation_template import ExplanationTemplate
+from prompt_engine.templates.comparison_template import ComparisonTemplate
+from prompt_engine.templates.application_template import ApplicationTemplate
+from prompt_engine.templates.analysis_template import AnalysisTemplate
 
 __all__ = [
     "BaseTemplate",
