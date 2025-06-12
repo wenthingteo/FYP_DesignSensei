@@ -332,7 +332,7 @@ if __name__ == "__main__":
 
     print("--- Integration with PromptManager (Conceptual Example) ---")
     # To integrate this with your PromptManager, you would use it like this:
-    # from backend.prompt_engine.managers.prompt_manager import PromptManager
+    # from prompt_engine.managers.prompt_manager import PromptManager
     # # Assuming your PromptManager is set up to take graphrag_results
     # # from mock_search_module import MockSearchModule, MOCK_KNOWLEDGE_GRAPH_DATA
     #

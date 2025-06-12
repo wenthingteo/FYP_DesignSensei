@@ -1,5 +1,5 @@
 from typing import Dict
-from backend.prompt_engine.templates.base_template import BaseTemplate, UserExpertise, ResponseLength
+from prompt_engine.templates.base_template import BaseTemplate, UserExpertise, ResponseLength
 
 class ExplanationTemplate(BaseTemplate):
     """Template for explanation-type questions about software design concepts, patterns, and principles"""

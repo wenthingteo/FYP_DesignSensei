@@ -13,19 +13,19 @@ class UserExpertise(Enum):
 class ResponseLength(Enum):
     SHORT = "short"
     MEDIUM = "medium"
-    DETAILED = "detailed"
+    DETAILED = "detailed" # Using DETAILED as per your latest template
 
 class BaseTemplate(ABC):
     """Base class for all prompt templates"""
-    
+   
     def __init__(self):
         self.system_role = self._get_system_role()
         self.base_instructions = self._get_base_instructions()
-        
+       
     def _get_system_role(self) -> str:
         """Define the system role for GPT-4"""
-        return """You are an expert software design educator with deep knowledge of design patterns, 
-SOLID principles, software architecture, domain-driven design, code quality, and code structure. 
+        return """You are an expert software design educator with deep knowledge of design patterns,
+SOLID principles, software architecture, domain-driven design, code quality, and code structure.
 You provide clear, educational explanations with practical examples and always cite your sources."""
 
     def _get_base_instructions(self) -> str:
@@ -75,35 +75,64 @@ VISUAL EMPHASIS:
 """
 
     @abstractmethod
-    def generate_prompt(self, 
-                       user_query: str, 
-                       graphrag_results: Dict, 
-                       context: Dict,
-                       user_expertise: UserExpertise = UserExpertise.INTERMEDIATE,
-                       response_length: ResponseLength = ResponseLength.MEDIUM) -> str:
+    def generate_prompt(self,
+                        user_query: str,
+                        graphrag_results: Dict,
+                        context: Dict,
+                        user_expertise: UserExpertise = UserExpertise.INTERMEDIATE,
+                        response_length: ResponseLength = ResponseLength.MEDIUM) -> str:
         """Generate the complete prompt for GPT-4"""
         pass
 
     def _format_graphrag_context(self, results: Dict) -> str:
-        """Format GraphRAG results into context for the prompt"""
-        if not results.get('results'):
+        """
+        Format GraphRAG results into context for the prompt.
+        Safely accesses dictionary keys using .get() to prevent KeyErrors.
+        """
+        # Ensure results is not None or empty, and has a 'results' key or is a dict of dicts
+        if not results or not (isinstance(results, dict) and (results.get('results') or any(isinstance(v, dict) for v in results.values()))):
             return "No specific knowledge graph results available."
-            
+           
         context_parts = []
         context_parts.append("KNOWLEDGE BASE CONTEXT:")
-        
-        for i, result in enumerate(results['results'][:5], 1):  # Limit to top 5 results
-            context_parts.append(f"\n{i}. **{result['name']}** ({result['label']})")
-            context_parts.append(f"   Description: {result['description']}")
-            context_parts.append(f"   Source: {result['source']}, Page: {result.get('page', 'N/A')}")
-            context_parts.append(f"   Relevance: {result['relevance_score']}")
-            
-            # Add related concepts
-            if result.get('relationships'):
-                related = [rel['related_node'] for rel in result['relationships'][:2]]
+       
+        # Normalize input to a list of result dictionaries
+        list_of_results = []
+        if isinstance(results, dict) and 'results' in results and isinstance(results['results'], list):
+            list_of_results = results['results']
+        elif isinstance(results, dict): # Handle the {"Concept Name": {...}} format
+            list_of_results = list(results.values())
+        elif isinstance(results, list): # Direct list of results (less likely from search_service, but robust)
+            list_of_results = results
+
+        # Limit to top 5 results to keep prompt concise
+        for i, result in enumerate(list_of_results[:5], 1):  
+            # --- FIX: Use .get() with a default value to avoid KeyError ---
+            name = result.get('name')
+            title = result.get('title') # 'title' often comes from raw Neo4j results
+            label = result.get('label', 'General Concept')
+            description = result.get('description')
+            content = result.get('content') # 'content' often comes from raw Neo4j results
+            source = result.get('source', 'N/A') # Safe access for 'source'
+            page = result.get('page', 'N/A') # Safe access for 'page'
+            relevance_score = result.get('relevance_score', 0.0)
+           
+            # Prefer 'name' over 'title', 'description' over 'content'
+            display_title = name if name else title if title else 'Untitled Concept'
+            display_content = description if description else content if content else 'No detailed description available.'
+
+            context_parts.append(f"\n{i}. **{display_title}** ({label})")
+            context_parts.append(f"   Description: {display_content}")
+            context_parts.append(f"   Source: {source}, Page: {page}")
+            context_parts.append(f"   Relevance: {relevance_score:.2f}")
+           
+            # Add related concepts if 'relationships' key exists and is not empty
+            if result.get('relationships') and isinstance(result['relationships'], list):
+                # Assuming relationships are structured like [{'type': 'RELATED_TO', 'target_node_name': 'ConceptX'}]
+                related = [rel.get('target_node_name') for rel in result['relationships'] if rel.get('target_node_name')][:2] # Limit related to 2
                 if related:
-                    context_parts.append(f"   Related: {', '.join(related)}")
-        
+                    context_parts.append(f"   Related Concepts: {', '.join(related)}")
+       
         return '\n'.join(context_parts)
 
     def _get_expertise_modifier(self, expertise: UserExpertise) -> str:
@@ -118,7 +147,7 @@ BEGINNER-LEVEL FORMATTING:
 - Use analogies and real-world examples
 - Focus on fundamental concepts
 - Use more visual breaks and shorter paragraphs""",
-            
+           
             UserExpertise.INTERMEDIATE: """
 INTERMEDIATE-LEVEL FORMATTING:
 - Use standard technical terminology with `code formatting`
@@ -128,7 +157,7 @@ INTERMEDIATE-LEVEL FORMATTING:
 - Connect concepts to practical applications
 - Mention common pitfalls in **bold warnings**
 - Use subheadings to organize complex topics""",
-            
+           
             UserExpertise.ADVANCED: """
 ADVANCED-LEVEL FORMATTING:
 - Use precise technical language with proper formatting
@@ -150,7 +179,7 @@ SHORT RESPONSE FORMAT:
 - Focus on key points only with **bold** emphasis
 - Use bullet points for quick scanning
 - Include one brief example maximum""",
-            
+           
             ResponseLength.MEDIUM: """
 MEDIUM RESPONSE FORMAT:
 - Provide a comprehensive but focused response (4-6 paragraphs)
@@ -158,7 +187,7 @@ MEDIUM RESPONSE FORMAT:
 - Include examples with proper code formatting
 - **Bold** important concepts throughout
 - End with key takeaways in bullet points""",
-            
+           
             ResponseLength.DETAILED: """
 DETAILED RESPONSE FORMAT:
 - Provide an extensive, detailed response with full formatting
@@ -175,14 +204,17 @@ DETAILED RESPONSE FORMAT:
         """Format previous conversation context"""
         if not context.get('previous_messages'):
             return ""
-            
+           
         context_parts = ["CONVERSATION CONTEXT:"]
-        
-        for msg in context['previous_messages'][-3:]:  # Last 3 messages
+       
+        # Limit to last 3 messages for brevity in prompt
+        for msg in context['previous_messages'][-3:]:  
             role = msg.get('role', 'user')
-            content = msg.get('content', '')[:200]  # Truncate long messages
-            context_parts.append(f"**{role.upper()}**: {content}...")
-            
+            content = msg.get('content', '')
+            # Truncate long messages to prevent exceeding token limits
+            truncated_content = content[:200] + "..." if len(content) > 200 else content
+            context_parts.append(f"**{role.upper()}**: {truncated_content}")
+           
         return '\n'.join(context_parts)
 
     def _get_formatting_examples(self) -> str:
