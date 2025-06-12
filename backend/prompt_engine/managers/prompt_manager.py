@@ -107,7 +107,7 @@ class PromptManager:
                     {"role": "user", "content": prompt.split("USER QUESTION:")[1].strip() if "USER QUESTION:" in prompt else prompt.strip()} # Strip whitespace
                 ],
                 temperature=0.7,
-                max_tokens=2000,  # Adjust based on response length requirements
+                max_tokens=100,  # Adjust based on response length requirements
                 top_p=1.0,
                 frequency_penalty=0.0,
                 presence_penalty=0.0

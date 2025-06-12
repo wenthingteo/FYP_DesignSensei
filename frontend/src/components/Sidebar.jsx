@@ -1,13 +1,17 @@
-import React from "react";
+import React, { useContext } from "react";
 import '../colors.css';
 import usagi from '../assets/usagi.png';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faCommentDots, faSearch } from '@fortawesome/free-solid-svg-icons';
 import ConversationHistory from "./ConversationHistory";
 import { useNavigate } from 'react-router-dom';
+import useCreateChat from '../hooks/useCreateChat';
+import { ChatContext } from "../context/ChatContext";
 
 const Sidebar = () => {
   const navigate = useNavigate();
+  const { setChatData } = useContext(ChatContext);
+  const createNewChat = useCreateChat(setChatData);
 
   const handleFeedbackClick = () => {
     navigate('/feedback');
@@ -57,6 +61,7 @@ const Sidebar = () => {
             flexGrow: 1,
             transition: 'background-color 0.2s ease-in-out',
           }}
+          onClick={createNewChat}
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#003366')}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#004080')}
         >
