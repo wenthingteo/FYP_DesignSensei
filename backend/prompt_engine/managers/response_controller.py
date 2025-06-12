@@ -1,7 +1,7 @@
 
 from typing import Dict
 from enum import Enum
-from backend.prompt_engine.templates.base_template import UserExpertise, ResponseLength
+from prompt_engine.templates.base_template import UserExpertise, ResponseLength
 
 class ResponseController:
     """Controls response length and complexity based on user needs"""

@@ -1,10 +1,10 @@
 from typing import List, Dict, Optional
 import logging
-from backend.prompt_engine.templates.base_template import BaseTemplate, UserExpertise, ResponseLength
-from backend.prompt_engine.templates.explanation_template import ExplanationTemplate
-from backend.prompt_engine.templates.comparison_template import ComparisonTemplate
-from backend.prompt_engine.templates.application_template import ApplicationTemplate
-from backend.prompt_engine.templates.analysis_template import AnalysisTemplate
+from prompt_engine.templates.base_template import BaseTemplate, UserExpertise, ResponseLength
+from prompt_engine.templates.explanation_template import ExplanationTemplate
+from prompt_engine.templates.comparison_template import ComparisonTemplate
+from prompt_engine.templates.application_template import ApplicationTemplate
+from prompt_engine.templates.analysis_template import AnalysisTemplate
 
 # Configure logging
 logger = logging.getLogger(__name__)
