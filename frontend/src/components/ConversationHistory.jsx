@@ -27,12 +27,15 @@ function ConversationHistory() {
 
   const handleConversationClick = async (conv) => {
     try {
-      const res = await axios.get(`http://127.0.0.1:8000/api/chat/${conv.id}/messages/`);
+      const res = await axios.get(`http://127.0.0.1:8000/api/conversations/${conv.id}/messages/`, {
+        withCredentials: true,
+      });
       setChatData((prev) => ({
         ...prev,
-        current_conversation: conv,
-        messages: res.data
+        currentConversation: conv.id,
+        messages: res.data,
       }));
+      console.log(res);
     } catch (err) {
       console.error("Failed to load messages:", err);
     }
@@ -47,15 +50,15 @@ function ConversationHistory() {
     if (!newTitle) return;
 
     try {
-      const response = await fetch('/api/chatbot/', {
+      const response = await fetch(`http://127.0.0.1:3000/api/conversations/${id}/`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          cid: id,
           title: newTitle,
         }),
+        withCredentials: true,
       });
 
       if (!response.ok) throw new Error("Failed to rename conversation");
@@ -81,8 +84,9 @@ function ConversationHistory() {
     if (!window.confirm("Are you sure you want to delete this conversation?")) return;
 
     try {
-      const response = await fetch(`/api/chatbot/?cid=${id}`, {
+      const response = await fetch(`http://127.0.0.1:3000/api/conversations/${id}/`, {
         method: 'DELETE',
+        withCredentials: true,
       });
 
       if (!response.ok) throw new Error("Failed to delete conversation");
@@ -116,7 +120,7 @@ function ConversationHistory() {
             <div
               className={`conversation-item d-flex align-items-center justify-content-between p-2 mb-1 ${isActive ? 'bg-grey-2' : ''}`}
               style={{ borderRadius: "6px", cursor: "pointer" }}
-              onClick={() => handleConversationClick(conv.id)}
+              onClick={() => handleConversationClick(conv)}
               onMouseEnter={(e) => {
                 if (!isActive) e.currentTarget.classList.add("bg-grey-2");
               }}
