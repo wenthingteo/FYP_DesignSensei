@@ -8,7 +8,8 @@ import { useNavigate } from 'react-router-dom';
 import useCreateChat from '../hooks/useCreateChat';
 import { ChatContext } from "../context/ChatContext";
 
-const Sidebar = () => {
+// Sidebar now accepts onDeleteConfirmRequest prop
+const Sidebar = ({ onDeleteConfirmRequest }) => {
   const navigate = useNavigate();
   const { setChatData } = useContext(ChatContext);
   const createNewChat = useCreateChat(setChatData);
@@ -83,7 +84,8 @@ const Sidebar = () => {
       </div>
 
       {/* Conversation History */}
-      <ConversationHistory />
+      {/* Pass the onDeleteConfirmRequest prop down */}
+      <ConversationHistory onDeleteConfirmRequest={onDeleteConfirmRequest} />
 
       {/* Feedback Button */}
       <div className="mt-auto pt-3" style={{ borderTop: '1px solid #eee' }}>

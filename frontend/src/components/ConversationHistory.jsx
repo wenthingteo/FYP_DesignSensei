@@ -4,7 +4,8 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEllipsisVertical, faPen, faTrash, faCheck, faTimes } from "@fortawesome/free-solid-svg-icons";
 import axios from "axios";
 
-function ConversationHistory() {
+// ConversationHistory component now accepts onDeleteConfirmRequest prop
+function ConversationHistory({ onDeleteConfirmRequest }) {
   const { chatData, setChatData } = useGetChats();
   const conversations = chatData?.conversations ?? [];
   const currentId = chatData?.currentConversation;
@@ -143,44 +144,11 @@ function ConversationHistory() {
     }
   };
 
-  const deleteConversation = async (convId) => {
-    if (!window.confirm("Are you sure you want to delete this conversation?")) return;
-    
-    try {
-      const response = await axios.delete(
-        `http://127.0.0.1:8000/api/conversations/${convId}/`,
-        { 
-          withCredentials: true, 
-          headers: { 
-            'X-CSRFToken': getCookie('csrftoken'), 
-            'Content-Type': 'application/json' 
-          } 
-        }
-      );
-      
-      if (response.status === 204 || response.status === 200) {
-        setChatData((prev) => {
-          const updatedConversations = prev.conversations.filter(
-            (conv) => conv.id !== convId
-          );
-          let newCurrentConversation = prev.currentConversation;
-          if (newCurrentConversation === convId) {
-            newCurrentConversation = updatedConversations.length > 0 ? updatedConversations[0].id : null;
-          }
-          return {
-            ...prev,
-            conversations: updatedConversations,
-            currentConversation: newCurrentConversation,
-            messages: newCurrentConversation === null ? [] : 
-                     newCurrentConversation === prev.currentConversation ? [] : prev.messages
-          };
-        });
-        setActiveMenuId(null);
-        console.log("Conversation deleted successfully");
-      }
-    } catch (err) {
-      console.error("Error deleting conversation:", err);
-      alert("Failed to delete conversation. Please try again.");
+  // Renamed to clarify its role: requesting confirmation, not direct deletion
+  const requestDeleteConfirmation = (convId) => {
+    if (onDeleteConfirmRequest) {
+      onDeleteConfirmRequest(convId);
+      setActiveMenuId(null); // Close the menu after clicking delete
     }
   };
 
@@ -304,7 +272,7 @@ function ConversationHistory() {
                     color: '#dc3545',
                     transition: 'background-color 0.2s ease'
                   }}
-                  onClick={() => deleteConversation(conv.id)}
+                  onClick={() => requestDeleteConfirmation(conv.id)}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#EEEEEE';
                   }}
