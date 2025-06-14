@@ -62,8 +62,8 @@ const Sidebar = () => {
             transition: 'background-color 0.2s ease-in-out',
           }}
           onClick={createNewChat}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#003366')}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#004080')}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2C5E97')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#3980D0')}
         >
           <FontAwesomeIcon icon={faPlus} size="sm" />
           <span>New Chat</span>

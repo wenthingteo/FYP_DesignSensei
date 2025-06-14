@@ -4,6 +4,7 @@ import { faBars, faPaperPlane } from '@fortawesome/free-solid-svg-icons';
 import Lottie from "lottie-react";
 import robotAnimation from "../assets/robot_animation.json";
 import Sidebar from "../components/Sidebar";
+import WelcomePage from "../components/WelcomePage";
 import { ChatContext } from "../context/ChatContext";
 import useSendMessage from "../hooks/useSendMessage";
 
@@ -16,7 +17,6 @@ const ChatbotPage = () => {
   const inputRef = useRef(null);
 
   const { chatData, setChatData } = useContext(ChatContext);
-  // Destructure properties from chatData, ensuring currentConversation is an ID
   const { messages, currentConversation, conversations } = chatData;
   const sendMessage = useSendMessage(chatData, setChatData);
 
@@ -25,20 +25,24 @@ const ChatbotPage = () => {
 
   // Filter messages for the current conversation
   const currentMessages = messages.filter(m => {
-    // Added extensive logging for debugging filter
-    console.log(`Filtering message ID: ${m.id}, conversation: ${m.conversation}, sender: ${m.sender}`);
-    console.log(`  Current active conversation ID: ${currentConversation}`);
-    console.log(`  Match? ${m.conversation === currentConversation} (Type of m.conversation: ${typeof m.conversation}, Type of currentConversation: ${typeof currentConversation})`);
+    // Defensive check: ensure 'm' is a valid object before accessing properties
+    if (!m) {
+      console.warn("Found an undefined or null message in the messages array. Skipping.");
+      return false; // Exclude invalid messages
+    }
     return m.conversation === currentConversation;
   });
 
+  // Check if we should show welcome page (new conversation state or no messages)
+  const showWelcomePage = currentConversation === "new" || (!currentConversation || currentMessages.length === 0);
 
-  // Scroll to bottom when new messages come in (dependency should be on messages changing)
+  // Effect to scroll to the latest message
   useEffect(() => {
-    console.log("ChatbotPage: currentMessages updated, attempting scroll.");
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentMessages]); // Keep currentMessages as dependency for specific re-render context
-
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
+  
   // Close sidebar on outside click
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -73,11 +77,59 @@ const ChatbotPage = () => {
 
   const handleSend = async () => {
     if (!inputValue.trim()) return;
+    
+    // If we're in "new" conversation state, create conversation with first message
+    if (currentConversation === "new") {
+      try {
+        const response = await fetch("http://127.0.0.1:8000/api/chat/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCookie("csrftoken"),
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            content: inputValue.trim(),
+            conversation: null, // null means create new conversation
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to create conversation");
+        }
+
+        const data = await response.json();
+        const { conversation_id, user_message, ai_response } = data;
+
+        // Create conversation object
+        const newConversation = {
+          id: conversation_id,
+          title: inputValue.trim().substring(0, 50) || "New Conversation",
+          created_at: new Date().toISOString(),
+        };
+
+        // Update chat data with new conversation and messages
+        setChatData((prev) => ({
+          ...prev,
+          conversations: [newConversation, ...prev.conversations],
+          currentConversation: conversation_id,
+          messages: [user_message, ai_response],
+        }));
+
+        setInputValue("");
+        console.log("New conversation created with first message:", conversation_id);
+        return;
+      } catch (error) {
+        console.error("Error creating conversation:", error);
+        alert("Failed to create conversation. Please try again.");
+        return;
+      }
+    }
+
+    // Normal message sending for existing conversations
     if (!currentConversation) {
-      // Use a custom modal or toast instead of alert()
       console.warn("Please select or create a conversation first.");
-      // Example of a simple alert replacement (for dev, use a proper UI component in prod)
-      alert("Please select or create a conversation first."); // Temporarily keep for user visibility, but replace!
+      alert("Please select or create a conversation first.");
       return;
     }
 
@@ -92,14 +144,21 @@ const ChatbotPage = () => {
     }
   };
 
-  // --- Crucial logs for debugging rendering ---
-  console.log("ChatbotPage Render - chatData:", chatData);
-  console.log("ChatbotPage Render - currentConversation ID:", currentConversation);
-  console.log("ChatbotPage Render - All messages in state:", messages);
-  console.log("ChatbotPage Render - Filtered currentMessages for display:", currentMessages);
-  console.log("ChatbotPage Render - Number of currentMessages:", currentMessages.length);
-  // --- END Crucial logs ---
-
+  // Helper function to get CSRF token
+  const getCookie = (name) => {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  };
 
   return (
     <div className="d-flex flex-column vh-100 bg-white">
@@ -155,30 +214,39 @@ const ChatbotPage = () => {
 
       {/* Main Content */}
       <div className="d-flex flex-grow-1" style={{ height: "100%", overflow: "hidden" }}>
-        {/* Robot */}
-        <div className="d-flex justify-content-center align-items-center" style={{ width: "30%", flexShrink: 0 }}>
-          <div style={{ width: "100%", height: "auto", maxWidth: "100%", maxHeight: "100%" }}>
-            <Lottie animationData={robotAnimation} loop />
+        {showWelcomePage ? (
+          /* Welcome Page */
+          <div className="w-100">
+            <WelcomePage userName="WT" />
           </div>
-        </div>
-
-        {/* Messages */}
-        <div className="flex-grow-1 overflow-auto d-flex flex-column gap-3 px-5 py-3">
-          {currentMessages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`px-3 py-2 rounded fs-5 ${
-                msg.sender === "AI Chatbot"
-                  ? "bg-white align-self-start"
-                  : "bg-blue-light text-black align-self-end"
-              }`}
-              style={{ maxWidth: msg.sender === "AI Chatbot" ? "100%" : "80%" }}
-            >
-              <p className="mb-0">{msg.content}</p>
+        ) : (
+          <>
+            {/* Robot */}
+            <div className="d-flex justify-content-center align-items-center" style={{ width: "30%", flexShrink: 0 }}>
+              <div style={{ width: "100%", height: "auto", maxWidth: "100%", maxHeight: "100%" }}>
+                <Lottie animationData={robotAnimation} loop />
+              </div>
             </div>
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
+
+            {/* Messages */}
+            <div className="flex-grow-1 overflow-auto d-flex flex-column gap-3 px-5 py-3">
+              {currentMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`px-3 py-2 rounded fs-5 ${
+                    msg.sender === "AI Chatbot"
+                      ? "bg-white align-self-start"
+                      : "bg-blue-light text-black align-self-end"
+                  }`}
+                  style={{ maxWidth: msg.sender === "AI Chatbot" ? "100%" : "80%" }}
+                >
+                  <p className="mb-0">{msg.content}</p>
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Chat Input */}
