@@ -1,11 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
+import { ChatContext } from "../context/ChatContext";
 
 function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const navigate = useNavigate();
+  const { fetchChats } = useContext(ChatContext);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -13,7 +15,7 @@ function LoginPage() {
     try {
       const response = await fetch("http://127.0.0.1:8000/api/login/", {
         method: "POST",
-        credentials: "include", // ⬅️ send cookies
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -24,7 +26,8 @@ function LoginPage() {
 
       if (response.ok) {
         console.log("Login success:", data);
-        navigate("/chatbot"); 
+        await fetchChats();
+        navigate("/chatbot");
       } else {
         setErrorMsg(data.error || "Login failed");
       }
@@ -61,10 +64,23 @@ function LoginPage() {
           />
         </div>
 
-        <button type="submit" className="btn btn-primary w-100">
+        <button type="submit" className="btn bg-blue-dark text-white w-100"
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2C5E97')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#3980D0')}
+        >
           Login
         </button>
       </form>
+      {/* Link to Register Page */}
+      <p className="mt-3 text-center">
+        Don't have an account?{" "}
+        <button
+          onClick={() => navigate("/register")}
+          className="btn btn-link p-0 align-baseline text-blue"
+        >
+          Register here
+        </button>
+      </p>
     </div>
   );
 }

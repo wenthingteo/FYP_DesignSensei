@@ -1,16 +1,19 @@
 import React, { useContext, useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate } from 'react-router-dom';
+import axios from "axios";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBars, faPaperPlane } from '@fortawesome/free-solid-svg-icons';
+import { faBars, faPaperPlane, faSignOutAlt } from '@fortawesome/free-solid-svg-icons';
 import Lottie from "lottie-react";
 import robotAnimation from "../assets/robot_animation.json";
 import Sidebar from "../components/Sidebar";
 import WelcomePage from "../components/WelcomePage";
 import { ChatContext } from "../context/ChatContext";
 import useSendMessage from "../hooks/useSendMessage";
-import './ChatbotPage.css'; // Import the new CSS file
-import DeleteConfirmationModal from "../components/DeleteConfirmationModal"; // Import the new modal component
+import './ChatbotPage.css';
+import DeleteConfirmationModal from "../components/DeleteConfirmationModal";
 
 const ChatbotPage = () => {
+  const navigate = useNavigate();
   const [inputValue, setInputValue] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebarRef = useRef(null);
@@ -21,37 +24,29 @@ const ChatbotPage = () => {
   const { chatData, setChatData } = useContext(ChatContext);
   const { messages, currentConversation, conversations } = chatData;
 
-  // New states for typing effect
   const [typingMessageContent, setTypingMessageContent] = useState("");
   const [isTyping, setIsTyping] = useState(false);
 
-  // New states for welcome page transition
   const [showWelcomePage, setShowWelcomePage] = useState(
     currentConversation === "new" || (!currentConversation && messages.length === 0)
   );
   const [transitioning, setTransitioning] = useState(false);
 
-  // New states for confirmation modal
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [conversationToDeleteId, setConversationToDeleteId] = useState(null);
 
-  // Pass setTypingMessageContent and setIsTyping to useSendMessage
   const sendMessage = useSendMessage(chatData, setChatData, setTypingMessageContent, setIsTyping);
 
-  // Find the current conversation object by ID for header title
   const currentConv = conversations.find(c => c.id === currentConversation);
 
-  // Filter messages for the current conversation (excluding the one being typed placeholder)
   const currentMessages = messages.filter(m =>
     m && m.conversation === currentConversation && m.id !== 'typing-ai-message'
   );
 
-  // Effect to scroll to the latest message or typing message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentMessages, typingMessageContent]);
 
-  // Close sidebar on outside click
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (
@@ -83,7 +78,6 @@ const ChatbotPage = () => {
     inputRef.current?.focus();
   }, [currentConversation, showWelcomePage]);
 
-  // Helper function to get CSRF token
   const getCookie = (name) => {
     let cookieValue = null;
     if (document.cookie && document.cookie !== '') {
@@ -102,7 +96,6 @@ const ChatbotPage = () => {
   const handleSend = async (messageContentToSend = inputValue.trim()) => {
     if (!messageContentToSend) return;
 
-    // If we're in "new" conversation state, create conversation with first message
     if (chatData.currentConversation === "new" || !chatData.currentConversation) {
       try {
         setTypingMessageContent("");
@@ -190,7 +183,6 @@ const ChatbotPage = () => {
     }, 700);
   }, [chatData, setChatData, sendMessage, handleSend]);
 
-  // Effect to manage showWelcomePage state based on currentConversation and messages
   useEffect(() => {
     const shouldShow = currentConversation === "new" || (!currentConversation && messages.length === 0);
     if (showWelcomePage !== shouldShow) {
@@ -207,7 +199,6 @@ const ChatbotPage = () => {
   }, [currentConversation, messages, showWelcomePage]);
 
 
-  // --- Confirmation Modal Functions ---
   const openConfirmModal = useCallback((convId) => {
     setConversationToDeleteId(convId);
     setShowConfirmModal(true);
@@ -242,25 +233,36 @@ const ChatbotPage = () => {
         const updatedConversations = prev.conversations.filter(
           (conv) => conv.id !== conversationToDeleteId
         );
-        // After deleting, ensure currentConversation is set to "new"
         return {
           ...prev,
           conversations: updatedConversations,
-          currentConversation: "new", // Go back to welcome page
-          messages: [], // Clear messages
+          currentConversation: "new",
+          messages: [],
         };
       });
-      // Immediately show welcome page, even before the useEffect catches up
       setShowWelcomePage(true); 
-      closeConfirmModal(); // Close modal after successful deletion
+      closeConfirmModal();
       console.log("Conversation deleted successfully and returned to welcome page.");
     } catch (err) {
       console.error("Error deleting conversation:", err);
-      // In a real app, show an error message to the user here (e.g., a toast notification)
-      closeConfirmModal(); // Close modal even on error
+      closeConfirmModal();
     }
   }, [conversationToDeleteId, setChatData, closeConfirmModal]);
 
+  const handleLogout = async () => {
+    try {
+      await axios.post('http://127.0.0.1:8000/api/logout/', {}, { withCredentials: true });
+      setChatData({
+        conversations: [],
+        messages: [],
+        currentConversation: null,
+      });
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout failed:', error);
+      alert('Logout failed. Please try again.');
+    }
+  };
 
   return (
     <div className="d-flex flex-column vh-100 bg-white">
@@ -312,10 +314,15 @@ const ChatbotPage = () => {
           {currentConv?.title || "Design Sensei"}
         </h1>
         <div style={{ width: "24px" }} />
+        {/* Logout Button */}
+        <button className="btn btn-outline-danger" onClick={handleLogout}>
+          <FontAwesomeIcon icon={faSignOutAlt} className="me-2" />
+          Logout
+        </button>
       </div>
 
       {/* Main Content */}
-      <div className="d-flex flex-grow-1" style={{ height: "100%", overflow: "hidden" }}>
+      <div className="d-flex flex-grow-1 overflow-auto" style={{ height: "100%", overflow: "hidden" }}>
         {showWelcomePage ? (
           <div className={`w-100 ${transitioning ? 'welcome-page-exit' : ''}`}>
             <WelcomePage onStartChat={handleFirstMessageSend} />

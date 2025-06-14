@@ -4,9 +4,12 @@ import robotAnimation from "../assets/robot_animation.json";
 
 const WelcomePage = () => {
   return (
-    <div className="d-flex flex-column justify-content-center align-items-center h-100 text-center px-4">
-      {/* Robot Animation */}
-      <div style={{ width: "300px", height: "300px", marginBottom: "2rem" }}>
+    <div className="d-flex flex-column align-items-center text-center px-4 py-4" style={{ minHeight: "100%", overflowY: "auto" }}>
+      {/* Robot Animation Container */}
+      <div 
+        className="w-75 w-sm-50 w-md-33 mb-4"
+        style={{ maxWidth: "300px", height: "auto" }}
+      >
         <Lottie animationData={robotAnimation} loop />
       </div>
       
@@ -20,8 +23,9 @@ const WelcomePage = () => {
         </p>
       </div>
 
-      {/* Features */}
+      {/* Features Section */}
       <div className="row text-start" style={{ maxWidth: "800px" }}>
+        {/* Feature 1: Design Patterns */}
         <div className="col-md-4 mb-3">
           <div className="d-flex align-items-start gap-3">
             <div className="bg-blue-light rounded-circle p-2" style={{ minWidth: "40px", height: "40px" }}>
@@ -34,6 +38,7 @@ const WelcomePage = () => {
           </div>
         </div>
         
+        {/* Feature 2: Architecture */}
         <div className="col-md-4 mb-3">
           <div className="d-flex align-items-start gap-3">
             <div className="bg-blue-light rounded-circle p-2" style={{ minWidth: "40px", height: "40px" }}>
@@ -46,6 +51,7 @@ const WelcomePage = () => {
           </div>
         </div>
         
+        {/* Feature 3: Code Review */}
         <div className="col-md-4 mb-3">
           <div className="d-flex align-items-start gap-3">
             <div className="bg-blue-light rounded-circle p-2" style={{ minWidth: "40px", height: "40px" }}>
