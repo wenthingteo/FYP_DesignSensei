@@ -4,7 +4,6 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEllipsisVertical, faPen, faTrash, faCheck, faTimes } from "@fortawesome/free-solid-svg-icons";
 import axios from "axios";
 
-// ConversationHistory component now accepts onDeleteConfirmRequest prop
 function ConversationHistory({ onDeleteConfirmRequest }) {
   const { chatData, setChatData } = useGetChats();
   const conversations = chatData?.conversations ?? [];
@@ -39,7 +38,6 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
   const handleConversationClick = async (conv) => {
     if (editingId) return;
 
-    // Skip API call if clicking on a "new" conversation state
     if (conv.id === "new") {
       setChatData((prev) => ({
         ...prev,
@@ -119,7 +117,6 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
       console.error("Error renaming conversation:", err);
       console.error("Error details:", err.response?.data);
       
-      // Show user-friendly error message
       let errorMessage = "Failed to rename conversation. ";
       if (err.response?.data?.error) {
         errorMessage += err.response.data.error;
@@ -144,7 +141,6 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
     }
   };
 
-  // Renamed to clarify its role: requesting confirmation, not direct deletion
   const requestDeleteConfirmation = (convId) => {
     if (onDeleteConfirmRequest) {
       onDeleteConfirmRequest(convId);
@@ -170,7 +166,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
   return (
     <div>
       {conversations
-        .filter(conv => conv.id !== "new") // Filter out the "new" state from display
+        .filter(conv => conv.id !== "new")
         .map((conv) => {
         const isActive = conv.id === currentId;
         const isEditing = editingId === conv.id;
