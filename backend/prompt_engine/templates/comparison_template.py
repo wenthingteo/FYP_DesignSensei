@@ -42,7 +42,7 @@ You are conducting a comprehensive comparison of software design concepts. Follo
 - **Define** each concept being compared with clear, precise definitions
 - **Bold** all pattern/principle names throughout your response
 - Provide brief context on the origin and purpose of each concept
-- Cite sources for definitions using [Source: filename, page X]
+# - Cite sources for definitions using [Source: filename, page X] # REMOVED
 
 ### 2. **Detailed Feature Analysis**
 Create a systematic comparison covering:

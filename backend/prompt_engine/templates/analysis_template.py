@@ -76,7 +76,7 @@ You are conducting a comprehensive software design analysis. Follow this structu
 
 ## Response Requirements:
 - Use proper markdown formatting with headings and **bold** keywords
-- Support all claims with [Source: filename, page X] citations
+# - Support all claims with [Source: filename, page X] citations # REMOVED
 - Include code examples where relevant using ```code blocks```
 - Provide practical, actionable insights
 - Connect analysis to broader software design principles

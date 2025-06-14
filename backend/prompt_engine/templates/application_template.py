@@ -95,7 +95,7 @@ Create a numbered, actionable implementation plan:
 - Connect implementation to broader design principles
 - Explain trade-offs and design decisions
 - Reference patterns and principles from your knowledge base
-- Use [Source: filename, page X] citations for all concepts
+# - Use [Source: filename, page X] citations for all concepts # REMOVED
 - Encourage understanding, not just copying
 
 Begin your implementation guidance now:
