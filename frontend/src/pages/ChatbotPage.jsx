@@ -8,6 +8,7 @@ import WelcomePage from "../components/WelcomePage";
 import { ChatContext } from "../context/ChatContext";
 import useSendMessage from "../hooks/useSendMessage";
 import './ChatbotPage.css'; // Import the new CSS file
+import DeleteConfirmationModal from "../components/DeleteConfirmationModal"; // Import the new modal component
 
 const ChatbotPage = () => {
   const [inputValue, setInputValue] = useState("");
@@ -25,11 +26,14 @@ const ChatbotPage = () => {
   const [isTyping, setIsTyping] = useState(false);
 
   // New states for welcome page transition
-  // showWelcomePage is true initially, or if no conversation is selected/messages exist
   const [showWelcomePage, setShowWelcomePage] = useState(
     currentConversation === "new" || (!currentConversation && messages.length === 0)
   );
   const [transitioning, setTransitioning] = useState(false);
+
+  // New states for confirmation modal
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [conversationToDeleteId, setConversationToDeleteId] = useState(null);
 
   // Pass setTypingMessageContent and setIsTyping to useSendMessage
   const sendMessage = useSendMessage(chatData, setChatData, setTypingMessageContent, setIsTyping);
@@ -45,7 +49,7 @@ const ChatbotPage = () => {
   // Effect to scroll to the latest message or typing message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentMessages, typingMessageContent]); // Added typingMessageContent as a dependency
+  }, [currentMessages, typingMessageContent]);
 
   // Close sidebar on outside click
   useEffect(() => {
@@ -77,9 +81,9 @@ const ChatbotPage = () => {
   // Auto focus input
   useEffect(() => {
     inputRef.current?.focus();
-  }, [currentConversation, showWelcomePage]); // Also focus when welcome page goes away
+  }, [currentConversation, showWelcomePage]);
 
-  // Helper function to get CSRF token (kept for consistency with existing code)
+  // Helper function to get CSRF token
   const getCookie = (name) => {
     let cookieValue = null;
     if (document.cookie && document.cookie !== '') {
@@ -101,8 +105,8 @@ const ChatbotPage = () => {
     // If we're in "new" conversation state, create conversation with first message
     if (chatData.currentConversation === "new" || !chatData.currentConversation) {
       try {
-        setTypingMessageContent(""); // Clear any previous typing state
-        setIsTyping(true); // Indicate typing for the AI response placeholder
+        setTypingMessageContent("");
+        setIsTyping(true);
         
         const response = await fetch("http://127.0.0.1:8000/api/chat/", {
           method: "POST",
@@ -113,7 +117,7 @@ const ChatbotPage = () => {
           credentials: "include",
           body: JSON.stringify({
             content: messageContentToSend,
-            conversation: null, // null means create new conversation
+            conversation: null,
           }),
         });
 
@@ -124,22 +128,19 @@ const ChatbotPage = () => {
         const data = await response.json();
         const { conversation_id, user_message, ai_response } = data;
 
-        // Create conversation object
         const newConversation = {
           id: conversation_id,
           title: messageContentToSend.substring(0, 50) || "New Conversation",
           created_at: new Date().toISOString(),
         };
 
-        // Add user message immediately
         setChatData((prev) => ({
           ...prev,
           conversations: [newConversation, ...prev.conversations],
           currentConversation: conversation_id,
-          messages: prev.messages.concat([user_message]), // Add user message first
+          messages: prev.messages.concat([user_message]),
         }));
         
-        // Start typing effect for AI response
         const fullAiResponseContent = ai_response.content;
         let i = 0;
         const typingInterval = setInterval(() => {
@@ -149,31 +150,27 @@ const ChatbotPage = () => {
           } else {
             clearInterval(typingInterval);
             setIsTyping(false);
-            setTypingMessageContent(""); // Clear typing content after full message is displayed
+            setTypingMessageContent("");
 
-            // Add the complete AI message to the chat data
             setChatData((prev) => ({
               ...prev,
               messages: prev.messages.concat([{ ...ai_response, content: fullAiResponseContent }]),
             }));
           }
-        }, 20); // Adjust typing speed (milliseconds per character)
+        }, 20);
 
         setInputValue("");
-        console.log("New conversation created with first message:", conversation_id);
         return;
       } catch (error) {
         console.error("Error creating conversation:", error);
-        alert("Failed to create conversation. Please try again.");
-        setIsTyping(false); // Stop typing on error
-        setTypingMessageContent(""); // Clear typing content on error
+        setIsTyping(false);
+        setTypingMessageContent("");
         return;
       }
     }
 
-    // Normal message sending for existing conversations (delegated to useSendMessage hook)
     await sendMessage(messageContentToSend);
-    setInputValue(""); // Clear input after sending
+    setInputValue("");
   };
 
   const handleKeyPress = (e) => {
@@ -183,39 +180,86 @@ const ChatbotPage = () => {
     }
   };
 
-  // Function to handle the first message send from Welcome Page, triggering transition
   const handleFirstMessageSend = useCallback(async (messageContent) => {
-    setTransitioning(true); // Start transition
-    // Delay sending message slightly to allow animation to start
-    await handleSend(messageContent); // Use the internal handleSend to manage new conversation/messages
+    setTransitioning(true);
+    await handleSend(messageContent);
     
-    // After message is sent (and AI response starts typing),
-    // wait a moment for the slide-out animation to be visually apparent,
-    // then truly hide the WelcomePage and end the transition flag.
     setTimeout(() => {
-      setShowWelcomePage(false); // Hide the WelcomePage
-      setTransitioning(false); // End the transition state
-    }, 700); // This duration should match or slightly exceed your CSS transition duration
+      setShowWelcomePage(false);
+      setTransitioning(false);
+    }, 700);
   }, [chatData, setChatData, sendMessage, handleSend]);
-
 
   // Effect to manage showWelcomePage state based on currentConversation and messages
   useEffect(() => {
-    // Only show WelcomePage if currentConversation is "new" or there are no messages for any conversation
     const shouldShow = currentConversation === "new" || (!currentConversation && messages.length === 0);
     if (showWelcomePage !== shouldShow) {
-      // Trigger transition when showWelcomePage changes from true to false
       if (showWelcomePage && !shouldShow) {
         setTransitioning(true);
         setTimeout(() => {
           setShowWelcomePage(shouldShow);
           setTransitioning(false);
-        }, 700); // Match this with your CSS transition duration
+        }, 700);
       } else {
         setShowWelcomePage(shouldShow);
       }
     }
   }, [currentConversation, messages, showWelcomePage]);
+
+
+  // --- Confirmation Modal Functions ---
+  const openConfirmModal = useCallback((convId) => {
+    setConversationToDeleteId(convId);
+    setShowConfirmModal(true);
+  }, []);
+
+  const closeConfirmModal = useCallback(() => {
+    setShowConfirmModal(false);
+    setConversationToDeleteId(null);
+  }, []);
+
+  const handleDeleteConversationConfirmed = useCallback(async () => {
+    if (!conversationToDeleteId) return;
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/conversations/${conversationToDeleteId}/`,
+        { 
+          method: 'DELETE',
+          headers: { 
+            'X-CSRFToken': getCookie('csrftoken'), 
+            'Content-Type': 'application/json' 
+          },
+          credentials: 'include'
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error("Failed to delete conversation");
+      }
+
+      setChatData((prev) => {
+        const updatedConversations = prev.conversations.filter(
+          (conv) => conv.id !== conversationToDeleteId
+        );
+        // After deleting, ensure currentConversation is set to "new"
+        return {
+          ...prev,
+          conversations: updatedConversations,
+          currentConversation: "new", // Go back to welcome page
+          messages: [], // Clear messages
+        };
+      });
+      // Immediately show welcome page, even before the useEffect catches up
+      setShowWelcomePage(true); 
+      closeConfirmModal(); // Close modal after successful deletion
+      console.log("Conversation deleted successfully and returned to welcome page.");
+    } catch (err) {
+      console.error("Error deleting conversation:", err);
+      // In a real app, show an error message to the user here (e.g., a toast notification)
+      closeConfirmModal(); // Close modal even on error
+    }
+  }, [conversationToDeleteId, setChatData, closeConfirmModal]);
 
 
   return (
@@ -231,7 +275,7 @@ const ChatbotPage = () => {
           zIndex: 1000,
         }}
       >
-        <Sidebar />
+        <Sidebar onDeleteConfirmRequest={openConfirmModal} />
       </div>
       {sidebarOpen && (
         <div
@@ -272,12 +316,11 @@ const ChatbotPage = () => {
 
       {/* Main Content */}
       <div className="d-flex flex-grow-1" style={{ height: "100%", overflow: "hidden" }}>
-        {showWelcomePage && (
+        {showWelcomePage ? (
           <div className={`w-100 ${transitioning ? 'welcome-page-exit' : ''}`}>
             <WelcomePage onStartChat={handleFirstMessageSend} />
           </div>
-        )}
-        {!showWelcomePage && (
+        ) : (
           <div className={`d-flex flex-grow-1 chat-content ${transitioning ? 'chat-content-enter' : ''}`}>
             {/* Robot */}
             <div className="d-flex justify-content-center align-items-center" style={{ width: "30%", flexShrink: 0 }}>
@@ -314,6 +357,13 @@ const ChatbotPage = () => {
           </div>
         )}
       </div>
+
+      {/* Confirmation Modal - Rendered outside the main content flow */}
+      <DeleteConfirmationModal
+        show={showConfirmModal}
+        onConfirm={handleDeleteConversationConfirmed}
+        onCancel={closeConfirmModal}
+      />
 
       {/* Chat Input */}
       <div className="p-5 d-flex align-items-center">
