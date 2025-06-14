@@ -84,16 +84,15 @@ const Sidebar = ({ onDeleteConfirmRequest }) => {
       </div>
 
       {/* Conversation History */}
-      {/* Pass the onDeleteConfirmRequest prop down */}
       <ConversationHistory onDeleteConfirmRequest={onDeleteConfirmRequest} />
 
       {/* Feedback Button */}
       <div className="mt-auto pt-3" style={{ borderTop: '1px solid #eee' }}>
         <div
-          className="d-flex align-items-center p-2 rounded-5 gap-2"
+          className="d-flex align-items-center p-3 gap-2 rounded"
           style={{ cursor: 'pointer', transition: 'background-color 0.2s ease-in-out' }}
           onClick={handleFeedbackClick}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f8f9fa')}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#e0e0e0')}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
         >
           <FontAwesomeIcon icon={faCommentDots} style={{ color: '#666', fontSize: '18px' }} />
