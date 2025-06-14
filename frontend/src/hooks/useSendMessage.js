@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const useSendMessage = (chatData, setChatData) => {
+const useSendMessage = (chatData, setChatData, setTypingMessageContent, setIsTyping) => {
   return async (content) => {
     const userTempMessage = {
       id: `temp-user-${Date.now()}`,
@@ -13,6 +13,10 @@ const useSendMessage = (chatData, setChatData) => {
       ...prev,
       messages: [...prev.messages, userTempMessage],
     }));
+
+    // Add a placeholder for the AI's typing message
+    setIsTyping(true);
+    setTypingMessageContent(""); // Clear previous typing content
 
     try {
       const res = await axios.post("http://127.0.0.1:8000/api/chat/", {
@@ -28,27 +32,44 @@ const useSendMessage = (chatData, setChatData) => {
 
       const { user_message, ai_response } = res.data;
 
-      setChatData((prev) => {
-        const filteredMessages = prev.messages.filter((msg) =>
-          msg && msg.id !== userTempMessage.id
-        );
+      // Simulate typing effect for AI response
+      const fullAiResponseContent = ai_response.content;
+      let i = 0;
+      const typingInterval = setInterval(() => {
+        if (i < fullAiResponseContent.length) {
+          setTypingMessageContent(fullAiResponseContent.substring(0, i + 1));
+          i++;
+        } else {
+          clearInterval(typingInterval);
+          setIsTyping(false);
+          setTypingMessageContent(""); // Clear typing content after full message is displayed
 
-        const messagesToAdd = [];
-        if (user_message && typeof user_message === 'object') {
-          messagesToAdd.push(user_message);
-        }
-        if (ai_response && typeof ai_response === 'object') {
-          messagesToAdd.push(ai_response);
-        }
+          // Now, add the complete AI message to the chat data
+          setChatData((prev) => {
+            const filteredMessages = prev.messages.filter((msg) =>
+              msg && msg.id !== userTempMessage.id // Remove temp user message
+            );
 
-        return {
-          ...prev,
-          messages: filteredMessages.concat(messagesToAdd),
-        };
-      });
+            const messagesToAdd = [];
+            if (user_message && typeof user_message === 'object') {
+              messagesToAdd.push(user_message);
+            }
+            if (ai_response && typeof ai_response === 'object') {
+              messagesToAdd.push({ ...ai_response, content: fullAiResponseContent }); // Ensure full content is saved
+            }
+
+            return {
+              ...prev,
+              messages: filteredMessages.concat(messagesToAdd),
+            };
+          });
+        }
+      }, 20); // Adjust typing speed (milliseconds per character)
 
     } catch (err) {
       console.error("Failed to send message or get bot response", err);
+      setIsTyping(false); // Stop typing on error
+      setTypingMessageContent(""); // Clear typing content on error
       setChatData((prev) => ({
         ...prev,
         messages: prev.messages.filter((msg) =>

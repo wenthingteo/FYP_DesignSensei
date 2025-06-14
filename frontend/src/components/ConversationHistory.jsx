@@ -85,10 +85,13 @@ function ConversationHistory() {
     }
 
     try {
-      // Use PATCH instead of PUT for partial updates
-      const response = await axios.patch(
+      console.log(`Attempting to rename conversation ${convId} to "${editingTitle.trim()}"`);
+      
+      const response = await axios.put(
         `http://127.0.0.1:8000/api/conversations/${convId}/`,
-        { title: editingTitle.trim() },
+        { 
+          title: editingTitle.trim()
+        },
         { 
           withCredentials: true, 
           headers: { 
@@ -97,6 +100,8 @@ function ConversationHistory() {
           } 
         }
       );
+
+      console.log("Rename response:", response);
 
       if (response.status === 200) {
         setChatData((prev) => ({
@@ -111,43 +116,22 @@ function ConversationHistory() {
       }
     } catch (err) {
       console.error("Error renaming conversation:", err);
+      console.error("Error details:", err.response?.data);
       
-      // Try alternative approach with PUT if PATCH fails
-      try {
-        // Get the current conversation data first
-        const currentConv = conversations.find(c => c.id === convId);
-        const response = await axios.put(
-          `http://127.0.0.1:8000/api/conversations/${convId}/`,
-          { 
-            title: editingTitle.trim(),
-            // Include other required fields if needed
-            created_at: currentConv?.created_at || new Date().toISOString(),
-          },
-          { 
-            withCredentials: true, 
-            headers: { 
-              'X-CSRFToken': getCookie('csrftoken'), 
-              'Content-Type': 'application/json' 
-            } 
-          }
-        );
-
-        if (response.status === 200) {
-          setChatData((prev) => ({
-            ...prev,
-            conversations: prev.conversations.map((conv) =>
-              conv.id === convId ? { ...conv, title: editingTitle.trim() } : conv
-            ),
-          }));
-          setEditingId(null);
-          setEditingTitle("");
-          console.log("Conversation renamed successfully with PUT");
-        }
-      } catch (putErr) {
-        console.error("Both PATCH and PUT failed:", putErr);
-        alert("Failed to rename conversation. Please try again.");
-        cancelRename();
+      // Show user-friendly error message
+      let errorMessage = "Failed to rename conversation. ";
+      if (err.response?.data?.error) {
+        errorMessage += err.response.data.error;
+      } else if (err.response?.status === 403) {
+        errorMessage += "You don't have permission to rename this conversation.";
+      } else if (err.response?.status === 404) {
+        errorMessage += "Conversation not found.";
+      } else {
+        errorMessage += "Please try again.";
       }
+      
+      alert(errorMessage);
+      cancelRename();
     }
   };
 
@@ -288,25 +272,47 @@ function ConversationHistory() {
                   top: '100%',
                   right: '10px',
                   zIndex: 999,
-                  padding: '6px 10px',
+                  padding: '6px 0',
                   fontSize: '14px',
                   minWidth: '120px'
                 }}
               >
                 <div
-                  className="d-flex align-items-center gap-2"
-                  style={{ padding: '4px 0', cursor: 'pointer', color: '#333' }}
+                  className="menu-item d-flex align-items-center gap-2"
+                  style={{ 
+                    padding: '8px 12px', 
+                    cursor: 'pointer', 
+                    color: '#333',
+                    transition: 'background-color 0.2s ease'
+                  }}
                   onClick={() => startRename(conv)}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#EEEEEE';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
                 >
-                  <FontAwesomeIcon icon={faPen} />
+                  <FontAwesomeIcon icon={faPen} style={{ fontSize: '12px' }} />
                   <span>Rename</span>
                 </div>
                 <div
-                  className="d-flex align-items-center gap-2"
-                  style={{ padding: '4px 0', cursor: 'pointer', color: 'red' }}
+                  className="menu-item d-flex align-items-center gap-2"
+                  style={{ 
+                    padding: '8px 12px', 
+                    cursor: 'pointer', 
+                    color: '#dc3545',
+                    transition: 'background-color 0.2s ease'
+                  }}
                   onClick={() => deleteConversation(conv.id)}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#EEEEEE';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
                 >
-                  <FontAwesomeIcon icon={faTrash} />
+                  <FontAwesomeIcon icon={faTrash} style={{ fontSize: '12px' }} />
                   <span>Delete</span>
                 </div>
               </div>
