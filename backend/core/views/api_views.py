@@ -14,6 +14,19 @@ class ConversationViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    def update(self, request, *args, **kwargs):
+        """Handle conversation title updates"""
+        conversation = self.get_object()
+        title = request.data.get('title')
+        
+        if not title:
+            return Response({'error': 'Title is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        conversation.title = title
+        conversation.save()
+        
+        return conversation.title
+
 
 class MessageViewSet(viewsets.ModelViewSet):
     serializer_class = MessageSerializer

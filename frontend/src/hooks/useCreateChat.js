@@ -1,28 +1,16 @@
-// src/hooks/useCreateConversation.js
-import { useCallback } from 'react';
+// src/hooks/useCreateChat.js
 
 const useCreateChat = (setChatData) => {
-  return useCallback(async () => {
-    try {
-      const response = await fetch('http://127.0.0.1:8000/api/chat/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'New Conversation' }),
-      });
+  return () => {
+    // Simply set the state to show welcome page - no API call yet
+    setChatData((prev) => ({
+      ...prev,
+      currentConversation: "new", // Special identifier for new conversation state
+      messages: [], // Empty messages to show welcome page
+    }));
 
-      if (!response.ok) throw new Error('Failed to create conversation');
-
-      const newConv = await response.json();
-
-      setChatData((prev) => ({
-        ...prev,
-        conversations: [newConv, ...prev.conversations],
-        currentConversation: newConv.id,
-      }));
-    } catch (error) {
-      console.error('Error creating conversation:', error);
-    }
-  }, [setChatData]);
+    console.log("New conversation state set - showing welcome page");
+  };
 };
 
 export default useCreateChat;
