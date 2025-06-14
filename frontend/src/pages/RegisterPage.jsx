@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 function RegisterPage() {
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState(""); // New state for email
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -24,7 +25,8 @@ function RegisterPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, password }),
+        // Include email in the request body
+        body: JSON.stringify({ username, email, password1: password, password2: confirmPassword }),
       });
 
       const data = await response.json();
@@ -33,6 +35,7 @@ function RegisterPage() {
         console.log("Registration success:", data);
         navigate("/login");
       } else {
+        // The backend uses 'error' key for error messages, so we use that.
         setErrorMsg(data.error || "Registration failed.");
       }
     } catch (error) {
@@ -64,6 +67,19 @@ function RegisterPage() {
           />
         </div>
 
+        {/* Email Input - Added this section */}
+        <div className="mb-3">
+          <label htmlFor="email" className="form-label">Email</label>
+          <input
+            type="email"
+            id="email"
+            className="form-control"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </div>
+
         {/* Password Input */}
         <div className="mb-3">
           <label htmlFor="password" className="form-label">Password</label>
@@ -91,9 +107,11 @@ function RegisterPage() {
         </div>
 
         {/* Register Button */}
-        <button type="submit" className="btn bg-blue-dark text-white w-100"
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2C5E97')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#3980D0')}
+        <button
+          type="submit"
+          className="btn bg-blue-dark text-white w-100"
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2C5E97')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#3980D0')}
         >
           Register
         </button>
