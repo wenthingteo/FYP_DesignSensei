@@ -27,17 +27,13 @@ class ChatbotAPIView(APIView):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # --- CRITICAL FIXES: Initialize components ONCE per APIView instance ---
-        # This prevents creating new expensive objects (like DB connections) on every request.
         self.context_manager = ContextManager()
-        self.prompt_manager = PromptManager() # PromptManager contains an IntentClassifier instance internally.
+        self.prompt_manager = PromptManager()
        
-        # Initialize Neo4jClient and GraphSearchService here
         self.neo4j_client = None
         self.graph_search_service = None
         try:
             self.neo4j_client = Neo4jClient()
-            # Ensure GraphSearchService constructor correctly accepts Neo4jClient
             self.graph_search_service = GraphSearchService(self.neo4j_client)
             logger.info("ChatbotAPIView: Neo4jClient and GraphSearchService initialized successfully.")
         except Exception as e:
@@ -50,8 +46,8 @@ class ChatbotAPIView(APIView):
 
     def post(self, request):
         """Send message (and trigger AI response)"""
-        message_text = request.data.get('message')
-        conversation_id = request.data.get('cid')
+        message_text = request.data.get('content')
+        conversation_id = request.data.get('conversation')
 
         if not message_text:
             return Response({'error': 'Message is required'}, status=status.HTTP_400_BAD_REQUEST)
