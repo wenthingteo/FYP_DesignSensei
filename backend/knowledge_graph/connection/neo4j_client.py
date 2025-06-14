@@ -1,3 +1,4 @@
+# knowledge_graph/connection/neo4j_client.py
 from neo4j import GraphDatabase, Driver
 from typing import Dict, List, Optional, Any
 import os
@@ -7,8 +8,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 class Neo4jClient:
-    def _init_(self):
-        # --- FIX: Initialize _driver to None at the very beginning ---
+    # --- FIX: Changed _init_ to __init__ (double underscores) ---
+    def __init__(self):
         self._driver: Optional[Driver] = None 
 
         load_dotenv()
@@ -16,7 +17,6 @@ class Neo4jClient:
         self._username = os.getenv("NEO4J_USERNAME")
         self._password = os.getenv("NEO4J_PASSWORD")
 
-        # Robustness Check for Environment Variables
         if not self._uri:
             logger.error("NEO4J_URI environment variable is not set.")
             raise ValueError("NEO4J_URI environment variable is required.")
@@ -33,7 +33,7 @@ class Neo4jClient:
             logger.info("Neo4j Driver initialized and connected successfully.")
         except Exception as e:
             logger.error(f"Failed to connect to Neo4j at {self._uri}: {e}", exc_info=True)
-            self._driver = None # Ensure driver is None if connection fails (already present, good)
+            self._driver = None 
             raise ConnectionError(f"Could not connect to Neo4j database. Error: {e}")
 
     def test_connection(self) -> int:
@@ -97,7 +97,7 @@ class Neo4jClient:
             logger.info("Neo4j Driver connection closed.")
 
 # Test it works (for standalone execution of this file)
-if __name__ == "_main_":
+if __name__ == "__main__": # Also fixed typo here from "_main_" to "__main__"
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     load_dotenv() 
 
@@ -117,7 +117,7 @@ if __name__ == "_main_":
         for record in result_full_nodes:
             node_data = record.get('n')
             if node_data:
-                print(f"Full Node Data: {node_data.get('name', 'N/A')}, Labels: {node_data.get('_labels', [])}, ID: {node_data.get('id_', 'N/A')}")
+                print(f"Full Node Data: {node_data.get('name', 'N/A')}, Labels: {node_data.get('_labels_', [])}, ID: {node_data.get('_id_', 'N/A')}")
             else:
                 print("No node data found in record.")
             

@@ -21,10 +21,8 @@ class ResourceProcessor:
             try:
                 self.db.update_processing_status(resource['id'], 'processing')
                 
-                # Download file from cloud storage
                 file_data = self.storage.download_file(resource['file_name'])
                 
-                # Process based on file type - ADD THIS FUNCTION
                 if resource['file_name'].lower().endswith('.pdf'):
                     pages = self.extract_text_from_pdf(file_data)
                 elif resource['file_name'].lower().endswith('.pptx'):

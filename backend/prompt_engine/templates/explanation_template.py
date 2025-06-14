@@ -43,7 +43,7 @@ You are providing a comprehensive educational explanation of software design con
 - **Bold** the concept name and key terminology throughout
 - Provide the *etymology* or historical context when relevant
 - Explain what problem this concept solves in software design
-- Use [Source: filename, page X] citations for definitions
+# - Use [Source: filename, page X] citations for definitions # REMOVED
 
 ### 2. **Core Principles & Fundamentals**
 - Break down the concept into **fundamental components**
