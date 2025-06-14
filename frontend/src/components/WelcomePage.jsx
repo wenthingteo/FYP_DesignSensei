@@ -2,7 +2,7 @@ import React from "react";
 import Lottie from "lottie-react";
 import robotAnimation from "../assets/robot_animation.json";
 
-const WelcomePage = ({ userName = "WT" }) => {
+const WelcomePage = () => {
   return (
     <div className="d-flex flex-column justify-content-center align-items-center h-100 text-center px-4">
       {/* Robot Animation */}
@@ -13,7 +13,7 @@ const WelcomePage = ({ userName = "WT" }) => {
       {/* Welcome Message */}
       <div className="mb-4">
         <h1 className="display-4 mb-3" style={{ color: "#004080", fontWeight: "600" }}>
-          Hello, {userName}! 👋
+          Hello! 👋
         </h1>
         <p className="lead text-muted mb-4" style={{ fontSize: "1.25rem", maxWidth: "600px" }}>
           Welcome to Software Design Sensei! I'm here to help you with all your software design questions and challenges.
