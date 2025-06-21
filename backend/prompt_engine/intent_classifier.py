@@ -1,3 +1,4 @@
+# prompt_engine/intent_classifier.py
 import re
 from typing import Dict, List, Tuple, Optional
 from enum import Enum
@@ -11,7 +12,10 @@ class QuestionType(Enum):
     APPLICATION = "application"
     ANALYSIS = "analysis"
     TROUBLESHOOTING = "troubleshooting"
-    # Consider a 'GENERAL' or 'UNCATEGORIZED' type for fallbacks if needed
+    # Added new question types for chatbot behavior control
+    GREETING = "greeting"
+    OUT_OF_SCOPE_GENERAL = "out_of_scope_general"
+    UNKNOWN = "unknown" # General fallback for software design, if no specific type matched
 
 class SoftwareDesignTopic(Enum):
     DESIGN_PATTERNS = "design_patterns"
@@ -26,8 +30,9 @@ class IntentClassifier:
     def __init__(self):
         # Regular expression patterns to identify question types
         self.question_patterns = {
+            # Existing software design question types
             QuestionType.EXPLANATION: [
-                r'\b(?:what|explain|define|describe|tell me about)\b',
+                r'\b(?:what is|what\'s|explain|define|describe|tell me about)\b',
                 r'\bis\s+(?:the|a)\b',
                 r'\bhow does\b',
                 r'\bmeaning of\b'
@@ -56,6 +61,15 @@ class IntentClassifier:
                 r'\bnot\s+working\b',
                 r'\bviolat(?:e|ing)\b',
                 r'\bbad\s+(?:practice|design)\b'
+            ],
+            # New greeting and general out-of-scope patterns
+            QuestionType.GREETING: [
+                r"^(hi|hello|hey)\b", # Starts with hi/hello/hey
+                r"\b(good morning|good afternoon|good evening|how are you|how's it going|what's up)\b"
+            ],
+            QuestionType.OUT_OF_SCOPE_GENERAL: [
+                r"\b(weather|joke|capital of|who is|what time is it|what's your name|how old are you|random fact|meaning of life)\b",
+                r"\b(can you tell me about yourself|what can you do|can you help me with that)\b" # More general requests
             ]
         }
        
@@ -95,21 +109,15 @@ class IntentClassifier:
         }
        
         # Mapping from Neo4j node labels (from your knowledge graph) to internal topic enums
-        # IMPORTANT: Only map conceptual labels that represent the topics your chatbot teaches.
-        # Ignore generic internal Neo4j labels or import artifacts.
         self.graph_label_to_topic_mapping = {
-            # Conceptual Labels from your `CALL db.labels()` output
             'DesignPattern': SoftwareDesignTopic.DESIGN_PATTERNS,
             'DDDConcept': SoftwareDesignTopic.DDD,
             'CodeStructure': SoftwareDesignTopic.CODE_STRUCTURE,
             'ArchPattern': SoftwareDesignTopic.ARCHITECTURE,
             'QualityAttribute': SoftwareDesignTopic.QUALITY,
             'DesignPrinciple': SoftwareDesignTopic.SOLID_PRINCIPLES,
-           
-            # If 'UnknownLabel' truly represents a topic, map it.
-            # For now, mapping it to GENERAL as a safe fallback.
+            # Generic/internal labels should map to GENERAL if they don't represent specific SD topics
             'UnknownLabel': SoftwareDesignTopic.GENERAL,
-            # System/Import-related labels that don't represent conceptual topics, mapped to GENERAL
             'KNOWLEDGE NODE': SoftwareDesignTopic.GENERAL,
             'RELATIONSHIP': SoftwareDesignTopic.GENERAL,
             'NODE': SoftwareDesignTopic.GENERAL,
@@ -121,73 +129,114 @@ class IntentClassifier:
             'Ver3KnowledgeGraphSemanticallyEnhancedDedupedRelationshipNeo4jCsv': SoftwareDesignTopic.GENERAL,
         }
 
+        # Keywords that indicate *any* software design relevance
+        self.any_software_design_keywords = [
+            kw for sublist in self.topic_keywords.values() for kw in sublist
+        ] + ['software', 'design', 'programming', 'developer', 'codebase', 'application', 'system']
+
+
     def classify_intent(self, user_query: str, graphrag_results: Optional[Dict] = None) -> Dict:
         """
         Classify user query into question type and software design topic.
-        Can optionally use GraphRAG results for refinement.
-
-        Args:
-            user_query (str): User's question or statement
-            graphrag_results (Dict, optional): Results from GraphRAG search.
-                                               Expected to contain node information,
-                                               potentially with 'label' or 'name' keys.
-
-        Returns:
-            Dict: Contains question_type, topic, confidence_score, and keywords_found
-                  All Enum values are converted to their string representations.
+        Prioritizes greeting and out-of-scope, then specific software design intents.
         """
         query_lower = user_query.lower()
 
-        # Step 1: Classify question type based on user query keywords/patterns
-        question_type, question_confidence = self._classify_question_type(query_lower)
+        # 1. Highest Priority: Greetings
+        for pattern in self.question_patterns[QuestionType.GREETING]:
+            if re.search(pattern, query_lower):
+                return {
+                    'question_type': QuestionType.GREETING.value,
+                    'topic': SoftwareDesignTopic.GENERAL.value,
+                    'question_confidence': 1.0,
+                    'topic_confidence': 1.0,
+                    'keywords_found': [],
+                    'overall_confidence': 1.0
+                }
+        
+        # 2. Second Priority: General Out-of-Scope (if no software design keywords detected)
+        # Check if the query contains any software design related keywords
+        is_software_design_query = any(re.search(r'\b' + re.escape(kw) + r'\b', query_lower) for kw in self.any_software_design_keywords)
 
-        # Step 2: Classify topic based on user query keywords
+        for pattern in self.question_patterns[QuestionType.OUT_OF_SCOPE_GENERAL]:
+            if re.search(pattern, query_lower) and not is_software_design_query:
+                return {
+                    'question_type': QuestionType.OUT_OF_SCOPE_GENERAL.value,
+                    'topic': SoftwareDesignTopic.GENERAL.value,
+                    'question_confidence': 1.0,
+                    'topic_confidence': 1.0,
+                    'keywords_found': [],
+                    'overall_confidence': 1.0
+                }
+
+        # 3. Third Priority: Software Design Specific Intents
+        question_type, question_confidence = self._classify_question_type_sd(query_lower) # Use a helper for SD types
         topic, topic_confidence, found_keywords = self._classify_topic(query_lower)
 
-        # Step 3: Refine topic classification using GraphRAG results (New/Improved Step)
-        if graphrag_results: # Only attempt refinement if graphrag_results are provided
+        # Refine topic classification using GraphRAG results (if provided and relevant)
+        if graphrag_results:
             refined_topic, refined_topic_confidence = self._refine_topic_with_graph_results(
-                current_topic=topic,
+                current_topic=SoftwareDesignTopic(topic), # Pass Enum
                 current_confidence=topic_confidence,
-                graphrag_raw_results_input=graphrag_results # Pass the raw input to the refined handler
+                graphrag_raw_results_input=graphrag_results
             )
-            # If refinement yields higher confidence, use it
             if refined_topic_confidence > topic_confidence:
-                topic = refined_topic
+                topic = refined_topic.value # Store as string
                 topic_confidence = refined_topic_confidence
-                logger.info(f"Topic refined by graph results: {topic.value} (Confidence: {topic_confidence:.2f})")
-
+                logger.info(f"Topic refined by graph results: {topic} (Confidence: {topic_confidence:.2f})")
+        
         overall_confidence = (question_confidence + topic_confidence) / 2
 
-        # --- FIX: Convert Enum objects to their string values before returning ---
+        # Final check: If it was classified as OUT_OF_SCOPE_GENERAL initially (e.g. from keyword list)
+        # but somehow has high SD confidence, we should consider it SD.
+        if question_type == QuestionType.OUT_OF_SCOPE_GENERAL and overall_confidence < 0.5:
+             # If it was caught by generic out-of-scope but *no* SD keywords, keep it OOS.
+             # If it has SD keywords, default to explanation.
+             return {
+                'question_type': QuestionType.OUT_OF_SCOPE_GENERAL.value,
+                'topic': SoftwareDesignTopic.GENERAL.value,
+                'question_confidence': question_confidence,
+                'topic_confidence': topic_confidence,
+                'keywords_found': found_keywords,
+                'overall_confidence': overall_confidence
+            }
+        
+        # Default to explanation if it seems SD-related but no specific question type pattern matched well
+        if question_type == QuestionType.UNKNOWN and is_software_design_query:
+            question_type = QuestionType.EXPLANATION
+            question_confidence = max(question_confidence, 0.4) # Give it a base confidence
+
         return {
-            'question_type': question_type.value, # Convert Enum to string
-            'topic': topic.value, # Convert Enum to string
+            'question_type': question_type.value,
+            'topic': topic if isinstance(topic, str) else topic.value, # Ensure it's string
             'question_confidence': question_confidence,
             'topic_confidence': topic_confidence,
             'keywords_found': found_keywords,
             'overall_confidence': overall_confidence
         }
 
-    def _classify_question_type(self, query: str) -> Tuple[QuestionType, float]:
-        """Classify the type of question being asked based on regex patterns."""
+    def _classify_question_type_sd(self, query: str) -> Tuple[QuestionType, float]:
+        """Classify the type of software design question being asked based on regex patterns."""
         scores = {}
-        # Count keyword matches based on regex patterns
-        for q_type, patterns in self.question_patterns.items():
+        # Iterate only over software design-specific question types
+        for q_type in [
+            QuestionType.EXPLANATION, QuestionType.COMPARISON,
+            QuestionType.APPLICATION, QuestionType.ANALYSIS, QuestionType.TROUBLESHOOTING
+        ]:
             score = 0
-            for pattern in patterns:
+            for pattern in self.question_patterns[q_type]:
                 matches = len(re.findall(pattern, query, re.IGNORECASE))
                 score += matches
             scores[q_type] = score
 
         if not any(scores.values()):
-            return QuestionType.EXPLANATION, 0.3
+            # If no specific SD pattern matched, but it has SD keywords (handled in main classify_intent)
+            # then it defaults to UNKNOWN, which can be re-assigned to EXPLANATION later.
+            return QuestionType.UNKNOWN, 0.3
 
-        # Determine best type and its confidence
         total_matches = sum(scores.values())
         best_type = max(scores.items(), key=lambda x: x[1])
        
-        # Calculate confidence: scale based on proportion of matches or absolute count
         confidence = min(best_type[1] / total_matches if total_matches > 0 else 0.3, 1.0)
         if best_type[1] > 0 and confidence < 0.5:
              confidence = 0.5
@@ -239,7 +288,9 @@ class IntentClassifier:
             if 'results' in graphrag_raw_results_input and isinstance(graphrag_raw_results_input['results'], list):
                 list_of_results = graphrag_raw_results_input['results']
             else:
-                list_of_results = list(graphrag_raw_results_input.values())
+                # If it's a dict but not the expected 'results' key, try iterating values
+                # This handles cases where graphrag_results might be a flat dict of nodes
+                list_of_results = list(graphrag_raw_results_input.values()) 
         elif isinstance(graphrag_raw_results_input, list):
             list_of_results = graphrag_raw_results_input
         else:
@@ -251,14 +302,25 @@ class IntentClassifier:
 
         label_counts = {}
         for result in list_of_results:
-            label = result.get('label')
-            if label:
-                mapped_topic = self.graph_label_to_topic_mapping.get(label)
+            label_or_labels = result.get('label') or result.get('_labels_') # Handle both singular 'label' and list '_labels_'
+            
+            if isinstance(label_or_labels, list):
+                # If it's a list of labels, iterate through them
+                for label in label_or_labels:
+                    mapped_topic = self.graph_label_to_topic_mapping.get(label)
+                    if mapped_topic:
+                        label_counts[mapped_topic] = label_counts.get(mapped_topic, 0) + 1
+                    else:
+                        logger.debug(f"Graph label '{label}' from search results not found in internal topic mapping.")
+            elif isinstance(label_or_labels, str):
+                # If it's a single label string
+                mapped_topic = self.graph_label_to_topic_mapping.get(label_or_labels)
                 if mapped_topic:
                     label_counts[mapped_topic] = label_counts.get(mapped_topic, 0) + 1
                 else:
-                    logger.debug(f"Graph label '{label}' from search results not found in internal topic mapping.")
+                    logger.debug(f"Graph label '{label_or_labels}' from search results not found in internal topic mapping.")
             else:
+                # Fallback to checking 'name' if no label is found
                 name_ = result.get('name')
                 if name_:
                     for topic_enum, keywords in self.topic_keywords.items():
@@ -290,14 +352,14 @@ class IntentClassifier:
         Convert intent classification and user query to search parameters for GraphRAG.
         This method compiles parameters that the search module will use.
         """
+        # If the intent is not a software design intent, return empty search parameters.
+        if intent_result['question_type'] in [QuestionType.GREETING.value, QuestionType.OUT_OF_SCOPE_GENERAL.value]:
+            return {}
+
         extracted_concepts = []
-       
-        # --- FIX: Use the string values from intent_result for topic ---
-        topic_str = intent_result['topic'] # This is now a string thanks to the fix in classify_intent
-       
-        # Use the string value to access topic_keywords
-        topic_enum = SoftwareDesignTopic(topic_str) # Convert back to Enum for internal logic if needed
-       
+        topic_str = intent_result['topic']
+        topic_enum = SoftwareDesignTopic(topic_str) # Convert back to Enum for internal logic
+
         if topic_enum in self.topic_keywords:
             for keyword in self.topic_keywords[topic_enum]:
                 if re.search(r'\b' + re.escape(keyword) + r'\b', user_query.lower()):
@@ -307,14 +369,15 @@ class IntentClassifier:
 
         return {
             'user_query_text': user_query,
-            'question_type': intent_result['question_type'], # This is now a string
-            'topic_filter_labels': self._topic_to_label_filter(topic_enum), # Pass the Enum back if _topic_to_label_filter expects it
-            'search_depth': self._get_search_depth(QuestionType(intent_result['question_type'])), # Convert back to Enum
-            'relationship_types': self._get_relevant_relationships(QuestionType(intent_result['question_type'])), # Convert back to Enum
+            'question_type': intent_result['question_type'],
+            'topic_filter_labels': self._topic_to_label_filter(topic_enum),
+            'search_depth': self._get_search_depth(QuestionType(intent_result['question_type'])),
+            'relationship_types': self._get_relevant_relationships(QuestionType(intent_result['question_type'])),
             'min_relevance_score': 0.7,
             'keywords': intent_result['keywords_found'],
             'extracted_concepts': extracted_concepts
         }
+
 
     def _topic_to_label_filter(self, topic: SoftwareDesignTopic) -> List[str]:
         """Map software design topics to Neo4j node labels that the search module will use for filtering."""
@@ -325,7 +388,7 @@ class IntentClassifier:
             SoftwareDesignTopic.DDD: ['DomainConcept', 'DDDConcept'],
             SoftwareDesignTopic.QUALITY: ['QualityAttribute', 'QualityMetric', 'CodeQuality'],
             SoftwareDesignTopic.CODE_STRUCTURE: ['CodeStructure', 'OrganizationPrinciple'],
-            SoftwareDesignTopic.GENERAL: ['Paradigm', 'UnknownLabel', 'KNOWLEDGE NODE', 'RELATIONSHIP', 'NODE', 'Relationship', 'Node', 'node', 'relationship', 'Ver3KnowledgeGraphSemanticallyEnhancedDedupedNodeNeo4jCsv', 'Ver3KnowledgeGraphSemanticallyEnhancedDedupedRelationshipNeo4jCsv'] # Included all generic/import labels
+            SoftwareDesignTopic.GENERAL: ['Paradigm', 'UnknownLabel', 'KNOWLEDGE NODE', 'RELATIONSHIP', 'NODE', 'Relationship', 'Node', 'node', 'relationship', 'Ver3KnowledgeGraphSemanticallyEnhancedDedupedNodeNeo4jCsv', 'Ver3KnowledgeGraphSemanticallyEnhancedDedupedRelationshipNeo4jCsv']
         }
         return mapping.get(topic, [])
 
@@ -364,26 +427,7 @@ if __name__ == "__main__":
             {'id': 'n_xyz', 'name': 'Cohesion', 'label': 'CodeQuality', 'relevance_score': 0.8},
         ]
     }
-   
-    mock_graph_results_srp_dict_format = {
-        "Single Responsibility Principle": {
-            "node_id": "n_a3d57b",
-            "name": "Single Responsibility Principle",
-            "label": "DesignPrinciple",
-            "description": "A class should have only one reason to change.",
-            "source": "solid-principles.pdf",
-            "page": 5,
-            "relevance_score": 0.9
-        },
-        "Cohesion": {
-            "node_id": "n_xyz",
-            "name": "Cohesion",
-            "label": "CodeQuality",
-            "description": "Degree to which elements within a module belong together.",
-            "relevance_score": 0.8
-        }
-    }
-
+    
     mock_graph_results_architecture = {
         'results': [
             {'id': 'n_599c9c5', 'name': 'Microservices Architecture', 'label': 'Architecture', 'relevance_score': 0.9},
@@ -395,25 +439,22 @@ if __name__ == "__main__":
             {'id': 'n_jkl', 'name': 'Object-Oriented Programming', 'label': 'Paradigm', 'relevance_score': 0.7},
         ]
     }
-    mock_graph_results_parser = {
-        'results': [
-            {'id': 'n_9a83ab', 'name': 'Parser', 'label': 'CodeStructure', 'description': 'A component of the compiler', 'relevance_score': 0.9},
-        ]
-    }
-
-
+    
+    # Test cases including new intents
     test_cases = [
+        ("Hi Sensei!", None), # No graph results for greetings
+        ("Hello, how are you?", None),
+        ("What's the weather like today?", None),
+        ("Tell me a joke.", None),
         ("What is the Single Responsibility Principle?", mock_graph_results_srp_list_format),
-        ("Explain the SRP.", mock_graph_results_srp_dict_format),
         ("Compare MVC and MVVM architectures.", mock_graph_results_architecture),
         ("How to implement a Factory Method pattern?", mock_graph_results_srp_list_format),
         ("Is this system design scalable?", mock_graph_results_architecture),
-        ("Why is my code violating dependency inversion principle?", mock_graph_results_srp_list_format),
-        ("Tell me about software testing.", mock_graph_results_general),
-        ("What is a Parser?", mock_graph_results_parser)
+        ("What is a Parser?", mock_graph_results_general), # Changed to general for this test
+        ("Can you help me with my math homework?", None) # Another OOS
     ]
 
-    print("--- Intent Classifier Testing ---")
+    print("--- Intent Classifier Testing (Updated) ---")
     for query_text, graph_results in test_cases:
         print(f"\nQuery: '{query_text}'")
         intent_result = classifier.classify_intent(user_query=query_text, graphrag_results=graph_results)
@@ -423,7 +464,12 @@ if __name__ == "__main__":
         print(f"  Topic: {intent_result['topic']} (Conf: {intent_result['topic_confidence']:.2f})")
         print(f"  Overall Confidence: {intent_result['overall_confidence']:.2f}")
         print(f"  Keywords Found (from query): {intent_result['keywords_found']}")
-        print(f"  Search Parameters for Search Module:")
-        for key, value in search_params.items():
-            if key != 'user_query_text':
-                print(f"    - {key}: {value}")
+        
+        if search_params: # Only print if search_params are not empty
+            print(f"  Search Parameters for Search Module:")
+            for key, value in search_params.items():
+                if key != 'user_query_text':
+                    print(f"    - {key}: {value}")
+        else:
+            print("  No search parameters generated (out-of-scope or greeting intent).")
+

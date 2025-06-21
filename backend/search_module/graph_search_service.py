@@ -1,52 +1,43 @@
-from typing import Optional, Dict, List, Any, Tuple
+# search_module/graph_search_service.py
+
+from typing import Dict, List, Any, Tuple, Optional
 import logging
-import re # Needed for keyword-based mocks and potential future concept extraction
-from collections import deque # For session history (though it's managed externally for this module now)
+import re
 
 # Import actual Neo4j driver and client
-from neo4j import GraphDatabase
-from knowledge_graph.connection.neo4j_client import Neo4jClient
+from neo4j import GraphDatabase 
+from knowledge_graph.connection.neo4j_client import Neo4jClient 
 
 # Import embedding service
 from search_module.embedding_service import get_embedding
+from prompt_engine.intent_classifier import QuestionType # Needed for early exit logic
 
 logger = logging.getLogger(__name__)
 
-# Load environment variables for Neo4j connection (if not handled by Neo4jClient internally)
-# If Neo4jClient handles loading these, you can remove this section.
+# Global neo4j_driver initialization (for direct use or if Neo4jClient relies on it being initialized globally)
+neo4j_driver = None
 import os
 from dotenv import load_dotenv
-load_dotenv()
-NEO4J_URI = os.getenv("NEO4J_URI")
-NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-
-# Initialize Neo4j driver for direct use in this module if Neo4jClient is not fully abstracting it
-# This part might be better managed by your Neo4jClient or as a singleton/app-level object
-# based on your project's architecture. For now, ensuring it's available.
-neo4j_driver = None
+load_dotenv() 
 try:
-    if NEO4J_URI and NEO4J_USERNAME and NEO4J_PASSWORD:
-        neo4j_driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
+    _uri = os.getenv("NEO4J_URI")
+    _username = os.getenv("NEO4J_USERNAME")
+    _password = os.getenv("NEO4J_PASSWORD")
+    if _uri and _username and _password:
+        neo4j_driver = GraphDatabase.driver(_uri, auth=(_username, _password))
         neo4j_driver.verify_connectivity()
-        logger.info("Neo4j driver initialized and connected successfully within GraphSearchService.")
+        logger.info("Global Neo4j driver initialized and connected successfully.")
     else:
-        logger.warning("Neo4j environment variables not fully set. Neo4j driver not initialized.")
+        logger.warning("Global Neo4j driver not initialized due to missing environment variables.")
 except Exception as e:
-    logger.error(f"Failed to initialize Neo4j driver: {e}", exc_info=True)
+    logger.error(f"Failed to initialize global Neo4j driver: {e}", exc_info=True)
     neo4j_driver = None
 
 
 class GraphSearchService:
     def __init__(self, neo4j_client: Neo4jClient):
-        # The Neo4jClient object (which wraps the driver) will be passed from ChatbotAPIView
         self.neo4j_client = neo4j_client
-        # Assuming embedding_service.py's get_embedding is a standalone function
-        # No need to initialize a client for it if it's a direct function call.
-
-        # Session history (managed for _build_contextual_query, if still used here)
-        # Note: If context is fully managed by ContextManager, this might be redundant.
-        self.session_histories = {}
+        self.session_histories = {} 
 
 
     def search(self, user_query_text: str, search_params: Dict, session_id: str) -> Dict:
@@ -67,42 +58,40 @@ class GraphSearchService:
         """
         logger.info(f"GraphSearchService: Received user_query_text='{user_query_text}', search_params={search_params}, session_id='{session_id}'")
 
-        if not self.neo4j_client or not neo4j_driver: # Check if Neo4j is available
-            logger.error("Neo4j client or driver not initialized. Cannot perform graph search.")
-            # Fallback to simple mock or raise an error if critical
-            # For testing, we'll return a basic mock based on user_query_text
+        # --- IMPORTANT FIX: Early exit if intent is not for graph search ---
+        if not search_params or search_params.get('question_type') in [QuestionType.GREETING.value, QuestionType.OUT_OF_SCOPE_GENERAL.value]:
+            logger.info("GraphSearchService: Intent is greeting or general out-of-scope, returning empty results.")
+            return {'results': []}
+
+        # --- FIX: Rely only on self.neo4j_client for connection check ---
+        if not self.neo4j_client or not self.neo4j_client._driver: 
+            logger.error("Neo4j client or its driver not initialized. Cannot perform graph search.")
             return self._get_fallback_mock_results(user_query_text, search_params)
 
 
-        # --- 1. Generate Embedding for the user_query_text (for semantic search) ---
+        # 1. Generate Embedding for the user_query_text (for semantic search)
         user_query_embedding = None
         try:
-            # Use the actual embedding service function
             user_query_embedding = get_embedding(user_query_text)
             if user_query_embedding is None:
                 logger.warning(f"Embedding service returned None for query: '{user_query_text}'")
         except Exception as e:
             logger.error(f"Failed to generate embedding for '{user_query_text}': {e}", exc_info=True)
-            # Continue without embedding if it fails
 
-        # --- 2. Extract parameters from search_params dictionary ---
-        # These are generated by the IntentClassifier
+        # 2. Extract parameters from search_params dictionary
         topic_labels = search_params.get('topic_filter_labels', [])
         search_depth = search_params.get('search_depth', 2)
         relationship_types = search_params.get('relationship_types', [])
         extracted_concepts = search_params.get('extracted_concepts', [])
         min_relevance_score = search_params.get('min_relevance_score', 0.7)
-        # Note: The 'keywords' from IntentClassifier are also available in search_params
         keywords_from_intent = search_params.get('keywords', [])
 
 
-        # --- 3. Build Dynamic Cypher Query and Execute ---
-        # This is the core logic where your teammate will implement the complex Cypher generation
-        # and execution, combining all search parameters.
+        # 3. Build Dynamic Cypher Query and Execute
         try:
             cypher_query, cypher_params = self._build_cypher_query(
                 user_query_text,
-                user_query_embedding, # Pass embedding for vector search
+                user_query_embedding,
                 topic_labels,
                 search_depth,
                 relationship_types,
@@ -112,34 +101,25 @@ class GraphSearchService:
             )
             logger.debug(f"Generated Cypher Query: {cypher_query} with params: {cypher_params}")
 
-            # Execute query using the Neo4jClient instance
-            # The run_cypher method in Neo4jClient should handle session management
             raw_graph_results = self.neo4j_client.run_cypher(cypher_query, cypher_params)
-           
-            # Process raw results from Neo4j (e.g., convert Neo4j Records to Python dicts)
+            
             processed_results = self._process_neo4j_results(raw_graph_results, user_query_embedding)
-           
-            # Filter by relevance if needed (your _rank_results will also do this)
+            
             final_results = [
                 res for res in processed_results if res.get('relevance_score', 0.0) >= min_relevance_score
             ]
-           
+            
             logger.info(f"GraphSearchService: Retrieved {len(final_results)} results from Neo4j.")
             return {'results': final_results}
 
         except Exception as e:
             logger.error(f"Error during Cypher query execution or processing: {e}", exc_info=True)
-            # Fallback to simple mock if real search fails
             return self._get_fallback_mock_results(user_query_text, search_params)
 
-    # --- Private Helper Methods ---
+    # Private Helper Methods ---
 
     def _get_embedding(self, text: str) -> List[float]:
-        """
-        Calls the gpt-4.1-nano embedding service to get an embedding for the given text.
-        This uses the imported `get_embedding` function from `embedding_service.py`.
-        """
-        # Ensure text is valid before calling embedding service
+        """Calls the gpt-4.1-nano embedding service to get an embedding for the given text."""
         if not isinstance(text, str) or not text.strip():
             logger.warning("Attempted to get embedding for empty or non-string text.")
             return []
@@ -151,20 +131,17 @@ class GraphSearchService:
             return embedding
         except Exception as e:
             logger.error(f"Error calling embedding service for '{text[:50]}...': {e}", exc_info=True)
-            return [] # Return empty list on error
+            return []
 
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
-        """
-        Calculates cosine similarity between two vectors.
-        Assumes vectors are non-empty and of same dimension.
-        """
+        """Calculates cosine similarity between two vectors."""
         if not vec1 or not vec2:
             return 0.0
         # Ensure same dimension, pad with zeros if not (though ideally they should be same)
         min_len = min(len(vec1), len(vec2))
         if min_len == 0:
             return 0.0
-       
+        
         vec1_cropped = vec1[:min_len]
         vec2_cropped = vec2[:min_len]
 
@@ -175,124 +152,148 @@ class GraphSearchService:
         if magnitude_vec1 == 0 or magnitude_vec2 == 0:
             return 0.0
         return dot_product / (magnitude_vec1 * magnitude_vec2)
-   
+    
     def _build_cypher_query(self, user_query_text: str, user_embedding: Optional[List[float]],
                             topic_labels: List[str], search_depth: int,
                             relationship_types: List[str], extracted_concepts: List[str],
                             min_relevance_score: float, keywords_from_intent: List[str]) -> Tuple[str, Dict]:
         """
         Constructs a dynamic Cypher query based on all provided search parameters.
-        This is the most complex part of the search module.
-
-        It should combine:
-        1.  **Full-text search:** Using user_query_text and keywords_from_intent on relevant node properties.
-        2.  **Vector similarity search:** If `user_embedding` is provided and Neo4j has a vector index,
-            query for semantically similar nodes.
-        3.  **Label filtering:** Using `topic_labels` to constrain the search space.
-        4.  **Relationship traversal:** Using `relationship_types` and `search_depth` to explore connections.
-        5.  **Direct concept matching:** Using `extracted_concepts` for direct node lookups (e.g., specific pattern names).
-
-        Returns: A tuple of (cypher_query_string, parameters_dictionary_for_cypher)
+        Fixed the Cypher syntax error by structuring CALLs and WITH clauses correctly.
         """
         logger.info(f"Building Cypher Query: user_query_text='{user_query_text}', topic_labels={topic_labels}, extracted_concepts={extracted_concepts}, depth={search_depth}, rel_types={relationship_types}")
-       
-        cypher_query_parts = []
+        
         params = {}
-       
-        # Start with a base match for nodes
-        match_clause = "MATCH (n)"
-        where_conditions = []
-       
-        # 1. Full-text search (example, assumes you have a full-text index 'node_fts')
+        
+        # Start building the query based on search components
+        query_parts = []
+        
+        # Part 1: Full-text search
         if user_query_text:
-            cypher_query_parts.append(f"CALL db.index.fulltext.queryNodes('node_fts', $searchText) YIELD node AS n_fts, score AS fts_score")
-            where_conditions.append("n = n_fts")
+            query_parts.append(f"""
+                CALL db.index.fulltext.queryNodes('node_fts', $searchText) YIELD node AS n, score AS fts_score
+                WITH n, fts_score, 0.0 AS vec_score // Initialize vec_score to 0.0 for all nodes from FTS
+            """)
             params['searchText'] = user_query_text
-       
-        # 2. Vector similarity search (example, assumes you have a vector index 'node_embeddings')
-        if user_embedding and self.neo4j_client: # Only add if embedding exists and Neo4j is connected
-            # This is a conceptual placeholder; actual vector search might differ
-            cypher_query_parts.append(f"CALL db.index.vector.queryNodes('node_embeddings', $k, $embedding) YIELD node AS n_vec, score AS vec_score")
-            where_conditions.append("n = n_vec")
+        
+        # Part 2: Vector similarity search
+        if user_embedding: 
+            query_parts.append(f"""
+                CALL db.index.vector.queryNodes('concept_embeddings', $k, $embedding) YIELD node AS n, score AS vec_score
+                WITH n, 0.0 AS fts_score, vec_score // Initialize fts_score to 0.0 for all nodes from vector search
+            """)
             params['embedding'] = user_embedding
-            params['k'] = 10 # Retrieve top 10 most similar nodes
+            params['k'] = 10 
 
+        # Combine FTS and Vector search results using UNION
+        if len(query_parts) > 1:
+            main_query = " UNION ALL ".join(query_parts)
+            # After UNION, consolidate distinct nodes and take max scores
+            main_query = f"""
+            {main_query}
+            WITH n, max(fts_score) AS fts_score, max(vec_score) AS vec_score
+            """
+        elif query_parts:
+            main_query = query_parts[0]
+        else:
+            # Fallback for software design questions without FTS or embedding
+            logger.warning("No FTS or embedding provided for a software design query. Performing broad node match.")
+            main_query = "MATCH (n) WITH n, 0.0 AS fts_score, 0.0 AS vec_score"
+
+        # Initialize where conditions
+        where_conditions = []
+        
+        # Apply additional filtering (labels, extracted concepts) to the `n` now in scope
         # 3. Direct concept matching (using extracted_concepts)
         if extracted_concepts:
-            # Match nodes by name or ID if extracted_concepts are specific
-            concept_conditions = [f"n.name IN $extracted_concepts_{i}" for i in range(len(extracted_concepts))]
-            where_conditions.append(f"({ ' OR '.join(concept_conditions) })")
+            concept_match_clauses = []
             for i, concept in enumerate(extracted_concepts):
-                params[f'extracted_concepts_{i}'] = concept # Parameterize each concept
+                concept_param_name = f'extracted_concept_{i}'
+                # Use toLower and CONTAINS for case-insensitive partial matching
+                concept_match_clauses.append(f"toLower(n.name) CONTAINS toLower(${concept_param_name})")
+                params[concept_param_name] = concept
+            if concept_match_clauses:
+                where_conditions.append(f"({' OR '.join(concept_match_clauses)})")
 
         # 4. Label filtering (using topic_labels)
         if topic_labels:
+            # Ensure label filtering applies to nodes that have these labels
             label_conditions = " OR ".join([f"'{label}' IN labels(n)" for label in topic_labels])
             where_conditions.append(f"({label_conditions})")
-           
+            
         # 5. Relationship traversal (conceptual - this needs proper Cypher paths)
-        # This is a complex part that would dynamically build paths.
-        # Example: if relationship_types contains 'RELATES_TO' and depth is 2
-        # MATCH (n)-[r*1..2]-(m) WHERE type(r) IN $relTypes
         if relationship_types and search_depth > 0:
-            # This is a simplified example. Real traversal needs care.
-            # You might want to get connected nodes and include them.
-            # cypher_query_parts.append(f"OPTIONAL MATCH (n)-[r*1..{search_depth}]-(m) WHERE type(r) IN $relationship_types")
-            # params['relationship_types'] = relationship_types
-            pass # Keep it simple for the initial fix, focus on direct node match
+            # This part is more complex to integrate into the UNION-based query structure.
+            # For simplicity, we'll keep direct node property/label matching as primary.
+            # If relationship traversal is critical, it would likely involve another UNION
+            # or a more advanced query structure like shortestPath.
+            pass
 
-        # Combine MATCH and WHERE clauses
-        final_cypher_query = match_clause
-        if cypher_query_parts: # If FTS or vector search used, combine them
-            final_cypher_query = " ".join(cypher_query_parts) + " WITH n, fts_score, vec_score" # Consolidate from sub-queries
-       
+        # Append WHERE clause if conditions exist
         if where_conditions:
-            final_cypher_query += " WHERE " + " AND ".join(where_conditions)
-       
+            main_query += " WHERE " + " AND ".join(where_conditions)
+        
         # Add a RETURN clause to get the nodes and their properties, and calculated scores
-        # Prioritize relevant nodes. Add semantic_score if applicable.
-        final_cypher_query += " RETURN n, fts_score, vec_score, n.embedding as embedding " # Return embedding for processing
-        final_cypher_query += " ORDER BY (COALESCE(fts_score, 0) * 0.5 + COALESCE(vec_score, 0) * 0.5) DESC LIMIT 20" # Example ranking
-
+        final_cypher_query = f"""
+        {main_query}
+        OPTIONAL MATCH (n)-[rel]->(target)
+        OPTIONAL MATCH (n)<-[rev_rel]-(source)
+        RETURN DISTINCT n, 
+               COALESCE(fts_score, 0) AS fts_score, 
+               COALESCE(vec_score, 0) AS vec_score, 
+               n.embedding AS embedding,
+               (COALESCE(fts_score, 0) * 0.5 + COALESCE(vec_score, 0) * 0.5) AS relevance_score, 
+               collect(DISTINCT {{type: type(rel), target_node_name: target.name, target_labels: labels(target), target_id: id(target)}}) AS relationships,
+               collect(DISTINCT {{type: type(rev_rel), source_node_name: source.name, source_labels: labels(source), source_id: id(source)}}) AS reverse_relationships
+        ORDER BY relevance_score DESC
+        LIMIT 20
+        """
+        
+        logger.debug(f"Final Constructed Cypher Query: {final_cypher_query} with params: {params}")
         return final_cypher_query, params
 
-    def _process_neo4j_results(self, raw_results: List[Any], user_query_embedding: Optional[List[float]]) -> List[Dict]:
+    def _process_neo4j_results(self, raw_results: List[Dict], user_query_embedding: Optional[List[float]]) -> List[Dict]:
         """
-        Processes raw results from Neo4j (Neo4j Records) into a standardized dictionary format
-        expected by the PromptManager.
+        Processes raw results from Neo4j (dictionaries returned by run_cypher) into a standardized dictionary format.
         Calculates a relevance score combining FTS, vector similarity, and node properties.
         """
-        processed_results = []
+        processed_data = []
         for record in raw_results:
-            node = record["n"]
+            # Access the node object directly from the record dictionary
+            node_data_from_record = record.get("n")
+            if not node_data_from_record or not isinstance(node_data_from_record, dict):
+                logger.warning(f"Skipping record due to missing or invalid 'n' key: {record}")
+                continue
+
             fts_score = record.get("fts_score", 0.0)
             vec_score = record.get("vec_score", 0.0)
-            node_embedding = record.get("embedding") # Get embedding from Neo4j node property
+            
+            # The embedding property should be directly in the record if returned by the query
+            node_embedding = record.get("embedding") 
 
-            # Calculate semantic similarity if both embeddings are available
             semantic_sim_score = 0.0
-            if user_query_embedding and node_embedding and isinstance(node_embedding, list): # Ensure node_embedding is a list
-                semantic_sim_score = self._cosine_similarity(user_query_embedding, node_embedding)
-           
-            # Combine scores (adjust weights as needed)
-            # This is a simple combined score. You can make this more sophisticated.
-            combined_relevance_score = (fts_score * 0.3) + (vec_score * 0.4) + (semantic_sim_score * 0.3)
-            combined_relevance_score = min(combined_relevance_score, 1.0) # Cap score at 1.0
-
+            if user_query_embedding and isinstance(node_embedding, list) and isinstance(user_query_embedding, list):
+                if len(user_query_embedding) == len(node_embedding):
+                    semantic_sim_score = self._cosine_similarity(user_query_embedding, node_embedding)
+                else:
+                    logger.warning(f"Embedding dimension mismatch for node {node_data_from_record.get('__id__', 'N/A')}. User: {len(user_query_embedding)}, Node: {len(node_embedding)}")
+            
+            # Use the relevance score calculated in Cypher primarily
+            calculated_relevance_score = record.get("relevance_score", 0.0) 
+            
             node_data = {
-                "id": node.element_id,
-                "title": node.get("name") or node.get("title", "Untitled Concept"), # Prefer 'name', fallback to 'title'
-                "content": node.get("description") or node.get("content", ""), # Prefer 'description', fallback to 'content'
-                "label": list(node.labels)[0] if node.labels else "Unknown", # Get primary label
-                "relevance_score": round(combined_relevance_score, 2), # Rounded for cleaner output
-                "embedding": node_embedding # Include embedding for PromptManager's use if needed
-                # Add other properties as needed, e.g., 'source', 'page', 'relationships'
+                "node_id": node_data_from_record.get('__id__', 'N/A'),
+                "name": node_data_from_record.get("name") or node_data_from_record.get("title", "Untitled Concept"), 
+                "description": node_data_from_record.get("description") or node_data_from_record.get("content", ""), 
+                "label": node_data_from_record.get('__labels__', ['Unknown'])[0], 
+                "relevance_score": round(calculated_relevance_score, 2),
+                "source": node_data_from_record.get("source", "N/A"),
+                "page": node_data_from_record.get("page", "N/A"),
+                "relationships": record.get("relationships", []) + record.get("reverse_relationships", []) 
             }
-            processed_results.append(node_data)
-       
-        # Sort by relevance score before returning
-        processed_results = sorted(processed_results, key=lambda x: x['relevance_score'], reverse=True)
-        return processed_results
+            processed_data.append(node_data)
+        
+        return sorted(processed_data, key=lambda x: x.get('relevance_score', 0.0), reverse=True)
 
     def _get_fallback_mock_results(self, user_query_text: str, search_params: Dict) -> Dict:
         """Provides mock search results if Neo4j or main search logic fails."""
@@ -300,21 +301,18 @@ class GraphSearchService:
         extracted_concepts = search_params.get('extracted_concepts', [])
         topic_labels = search_params.get('topic_filter_labels', [])
 
-        # Prioritize mocks based on extracted concepts
         for concept in extracted_concepts:
             if "single responsibility" in concept.lower() or "srp" in concept.lower():
-                mock_results.append({'id': 'n_srp', 'name': 'Single Responsibility Principle', 'label': 'DesignPrinciple', 'relevance_score': 0.9, 'description': 'A class should have only one reason to change.'})
+                mock_results.append({'node_id': 'n_srp', 'name': 'Single Responsibility Principle', 'label': 'DesignPrinciple', 'relevance_score': 0.9, 'description': 'A class should have only one reason to change.'})
             elif "factory" in concept.lower():
-                mock_results.append({'id': 'n_factory', 'name': 'Factory Method Pattern', 'label': 'DesignPattern', 'relevance_score': 0.8, 'description': 'Provides an interface for creating objects.'})
+                mock_results.append({'node_id': 'n_factory', 'name': 'Factory Method Pattern', 'label': 'DesignPattern', 'relevance_score': 0.8, 'description': 'Provides an interface for creating objects.'})
             elif "singleton" in concept.lower():
-                mock_results.append({'id': 'n_singleton', 'name': 'Singleton Pattern', 'label': 'DesignPattern', 'relevance_score': 0.85, 'description': 'Ensures a class has only one instance.'})
-            # Add more specific concept mocks as needed
-
-        # If no specific concepts matched, fallback to general keyword matching for mock
+                mock_results.append({'node_id': 'n_singleton', 'name': 'Singleton Pattern', 'label': 'DesignPattern', 'relevance_score': 0.85, 'description': 'Ensures a class has only one instance.'})
+            
         if not mock_results:
             if "solid" in user_query_text.lower() or "principle" in user_query_text.lower():
-                mock_results.append({'id': 'n_srp', 'name': 'Single Responsibility Principle', 'label': 'DesignPrinciple', 'relevance_score': 0.9, 'description': 'A class should have only one reason to change.'})
-                mock_results.append({'id': 'n_ocp', 'name': 'Open/Closed Principle', 'label': 'DesignPrinciple', 'relevance_score': 0.88, 'description': 'Entities should be open for extension, but closed for modification.'})
+                mock_results.append({'node_id': 'n_srp', 'name': 'Single Responsibility Principle', 'label': 'DesignPrinciple', 'relevance_score': 0.9, 'description': 'A class should have only one reason to change.'})
+                mock_results.append({'node_id': 'n_ocp', 'name': 'Open/Closed Principle', 'label': 'DesignPrinciple', 'relevance_score': 0.88, 'description': 'Entities should be open for extension, but closed for modification.'})
             elif "pattern" in user_query_text.lower():
                 mock_results.append({'id': 'n_factory', 'name': 'Factory Method Pattern', 'label': 'DesignPattern', 'relevance_score': 0.8, 'description': 'Provides an interface for creating objects.'})
             elif "architecture" in user_query_text.lower() or "microservices" in user_query_text.lower():
@@ -324,11 +322,23 @@ class GraphSearchService:
             elif "quality" in user_query_text.lower():
                 mock_results.append({'id': 'n_quality_code', 'name': 'Code Quality', 'label': 'QualityAttribute', 'relevance_score': 0.7, 'description': 'Overall goodness of code.'})
 
-        # Apply topic label filtering to mock results as well
         if topic_labels:
-            mock_results = [
-                res for res in mock_results
-                if res.get('label') in topic_labels or res.get('name') in extracted_concepts
-            ]
-       
+            mapped_mock_results = []
+            for res in mock_results:
+                is_match = False
+                if res.get('label') and res['label'] in topic_labels:
+                    is_match = True
+                elif res.get('name') and any(concept.lower() in res['name'].lower() for concept in extracted_concepts):
+                    is_match = True
+                
+                if is_match:
+                    mapped_mock_results.append(res)
+            mock_results = mapped_mock_results
+
+        for res in mock_results:
+            if 'source' not in res:
+                res['source'] = 'Mock Data'
+            if 'page' not in res:
+                res['page'] = 'N/A' 
+
         return {'results': mock_results}
