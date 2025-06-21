@@ -1,3 +1,4 @@
+# prompt_engine/managers/response_controller.py
 
 from typing import Dict
 from enum import Enum
@@ -41,31 +42,24 @@ class ResponseController:
             },
             ResponseLength.DETAILED: {
                 'max_tokens': 1500,
-                'max_examples': 4,
+                'max_examples': 3,
                 'include_followup': True
             }
         }
-    
+
     def get_response_parameters(self, 
-                              user_expertise: UserExpertise,
-                              response_length: ResponseLength,
-                              question_complexity: float = 0.5) -> Dict:
+                               user_expertise: UserExpertise, 
+                               response_length: ResponseLength,
+                               question_complexity: float, # 0.0 (simple) to 1.0 (complex)
+                               conversation_length: int = 0) -> Dict: # <-- ADDED THIS PARAMETER WITH DEFAULT
         """
-        Get parameters for controlling response generation
-        
-        Args:
-            user_expertise: User's expertise level
-            response_length: Desired response length
-            question_complexity: Complexity score of the question (0-1)
-            
-        Returns:
-            Dict with response control parameters
+        Determines dynamic response parameters based on user expertise, desired length,
+        and question complexity.
         """
+        complexity_params = self.complexity_rules.get(user_expertise, self.complexity_rules[UserExpertise.INTERMEDIATE]).copy()
+        length_params = self.length_rules.get(response_length, self.length_rules[ResponseLength.MEDIUM]).copy()
         
-        complexity_params = self.complexity_rules[user_expertise].copy()
-        length_params = self.length_rules[response_length].copy()
-        
-        # Adjust based on question complexity
+        # Adjust max_concepts and max_tokens based on question complexity
         if question_complexity > 0.7:  # High complexity question
             complexity_params['max_concepts_per_response'] += 1
             length_params['max_tokens'] = int(length_params['max_tokens'] * 1.2)
@@ -74,6 +68,11 @@ class ResponseController:
                 complexity_params['max_concepts_per_response'] - 1)
             length_params['max_tokens'] = int(length_params['max_tokens'] * 0.8)
         
+        # Adjust follow-up inclusion based on conversation length and expertise
+        length_params['include_followup'] = self.should_include_followup(
+            user_expertise, response_length, conversation_length
+        )
+
         return {
             **complexity_params,
             **length_params,
@@ -95,7 +94,7 @@ class ResponseController:
             return True
         
         # Include follow-up if conversation is short (< 3 exchanges)
-        if conversation_length < 6:  # 6 messages = 3 exchanges
+        if conversation_length < 6:  # 6 messages = 3 exchanges (user + bot)
             return True
         
-        return response_length == ResponseLength.DETAILED
+        return response_length == ResponseLength.DETAILED # Always include for detailed
