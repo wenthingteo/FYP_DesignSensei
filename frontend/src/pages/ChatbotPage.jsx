@@ -98,29 +98,11 @@ const ChatbotPage = () => {
 
     setInputValue("");
 
-    const userMessage = {
-      role: "user",
-      content: messageContentToSend,
-    };
-
-    const thinkingMessage = {
-      role: "bot",
-      content: "Thinking...",
-      isThinking: true,
-    };
-
-    setChatData((prev) => ({
-      ...prev,
-      messages: [...prev.messages, userMessage, thinkingMessage],
-    }));
-
-    setIsTyping(true);
-    setTypingMessageContent("");
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
     if (chatData.currentConversation === "new" || !chatData.currentConversation) {
       try {
+        setTypingMessageContent("");
+        setIsTyping(true);
+        
         const response = await fetch("http://127.0.0.1:8000/api/chat/", {
           method: "POST",
           headers: {
@@ -134,14 +116,16 @@ const ChatbotPage = () => {
           }),
         });
 
-        if (!response.ok) throw new Error("Failed to create conversation");
+        if (!response.ok) {
+          throw new Error("Failed to create conversation");
+        }
 
         const data = await response.json();
         const { conversation_id, user_message, ai_response } = data;
 
         const newConversation = {
           id: conversation_id,
-          title: messageContentToSend.substring(0, 30) || "New Conversation",
+          title: messageContentToSend.substring(0, 50) || "New Conversation",
           created_at: new Date().toISOString(),
         };
 
@@ -149,11 +133,12 @@ const ChatbotPage = () => {
           ...prev,
           conversations: [newConversation, ...prev.conversations],
           currentConversation: conversation_id,
+          messages: prev.messages.concat([user_message]),
         }));
-
+        
         const fullAiResponseContent = ai_response.content;
         let i = 0;
-        const typingSpeed = 2;
+        const typingSpeed = 0.5;
 
         const typingInterval = setInterval(() => {
           if (i < fullAiResponseContent.length) {
@@ -164,23 +149,24 @@ const ChatbotPage = () => {
             setIsTyping(false);
             setTypingMessageContent("");
 
-            setChatData((prev) => {
-              const updatedMessages = [...prev.messages];
-              updatedMessages[updatedMessages.length - 1] = {
-                ...ai_response,
-                content: fullAiResponseContent,
-              };
-              return { ...prev, messages: updatedMessages };
-            });
+            setChatData((prev) => ({
+              ...prev,
+              messages: prev.messages.concat([{ ...ai_response, content: fullAiResponseContent }]),
+            }));
           }
         }, typingSpeed);
 
-      } catch (err) {
-        console.error("API error:", err);
+        setInputValue("");
+        return;
+      } catch (error) {
+        console.error("Error creating conversation:", error);
         setIsTyping(false);
         setTypingMessageContent("");
+        return;
       }
     }
+
+    await sendMessage(messageContentToSend);
   };
 
   const handleKeyPress = (e) => {
