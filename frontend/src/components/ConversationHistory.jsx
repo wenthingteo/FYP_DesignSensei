@@ -237,7 +237,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                   right: '10px',
                   zIndex: 999,
                   padding: '6px 0',
-                  fontSize: '14px',
+                  fontSize: '16px',
                   minWidth: '120px'
                 }}
               >
@@ -257,7 +257,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
-                  <FontAwesomeIcon icon={faPen} style={{ fontSize: '12px' }} />
+                  <FontAwesomeIcon icon={faPen} style={{ fontSize: '14px' }} />
                   <span>Rename</span>
                 </div>
                 <div
@@ -276,7 +276,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
-                  <FontAwesomeIcon icon={faTrash} style={{ fontSize: '12px' }} />
+                  <FontAwesomeIcon icon={faTrash} style={{ fontSize: '14px' }} />
                   <span>Delete</span>
                 </div>
               </div>
