@@ -16,3 +16,24 @@ MATCH (h:Heartbeat {id: "aura_keep_alive"})
 RETURN h.lastUpdated AS lastUpdatedTimestamp, h.status AS status, h.id AS id
 
 2. use http://127.0.0.1:3000/ to connect the chatbot
+
+___
+## Knowledge Graph
+1. Change Design Principle Domain label by removing UNKNOWNLABEL node
+(name & SET need to change accordingly)
+
+MATCH (n:UnknownLabel {name: 'CodeStructure Domain'})
+REMOVE n:UnknownLabel
+SET n:CodeStructureDomain
+RETURN n.name, labels(n)
+
+2. Find any node according their name
+
+MATCH (n:UnknownLabel)
+RETURN n
+
+3. Find node relationship & graph
+(change the name and a accordingly)
+
+MATCH (a:DesignPattern {name: 'Filter Chain'})-[r]->(n)
+RETURN r, n

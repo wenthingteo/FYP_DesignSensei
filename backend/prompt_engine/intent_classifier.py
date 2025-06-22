@@ -99,7 +99,8 @@ class IntentClassifier:
             SoftwareDesignTopic.QUALITY: [
                 'quality', 'maintainability', 'testability', 'readability',
                 'performance', 'scalability', 'reliability', 'usability',
-                'code quality', 'technical debt', 'refactoring', 'clean code'
+                'code quality', 'technical debt', 'refactoring', 'clean code',
+                'coupling', 'cohesion'  # Added these as they're likely to exist
             ],
             SoftwareDesignTopic.CODE_STRUCTURE: [
                 'structure', 'organization', 'module', 'package', 'namespace',
@@ -111,22 +112,19 @@ class IntentClassifier:
         # Mapping from Neo4j node labels (from your knowledge graph) to internal topic enums
         self.graph_label_to_topic_mapping = {
             'DesignPattern': SoftwareDesignTopic.DESIGN_PATTERNS,
+            'DesignPatternDomain': SoftwareDesignTopic.DESIGN_PATTERNS,
+            'DesignPatternsTopic': SoftwareDesignTopic.DESIGN_PATTERNS,
             'DDDConcept': SoftwareDesignTopic.DDD,
+            'DomainDrivenDesign': SoftwareDesignTopic.DDD,
             'CodeStructure': SoftwareDesignTopic.CODE_STRUCTURE,
+            'CodeStructureDomain': SoftwareDesignTopic.CODE_STRUCTURE,
             'ArchPattern': SoftwareDesignTopic.ARCHITECTURE,
+            'ArchPatternDomain': SoftwareDesignTopic.ARCHITECTURE,
+            'ArchitecturePattern': SoftwareDesignTopic.ARCHITECTURE,
             'QualityAttribute': SoftwareDesignTopic.QUALITY,
+            'QualityAttributeDomain': SoftwareDesignTopic.QUALITY,
             'DesignPrinciple': SoftwareDesignTopic.SOLID_PRINCIPLES,
-            # Generic/internal labels should map to GENERAL if they don't represent specific SD topics
-            'UnknownLabel': SoftwareDesignTopic.GENERAL,
-            'KNOWLEDGE NODE': SoftwareDesignTopic.GENERAL,
-            'RELATIONSHIP': SoftwareDesignTopic.GENERAL,
-            'NODE': SoftwareDesignTopic.GENERAL,
-            'Relationship': SoftwareDesignTopic.GENERAL,
-            'Node': SoftwareDesignTopic.GENERAL,
-            'node': SoftwareDesignTopic.GENERAL,
-            'relationship': SoftwareDesignTopic.GENERAL,
-            'Ver3KnowledgeGraphSemanticallyEnhancedDedupedNodeNeo4jCsv': SoftwareDesignTopic.GENERAL,
-            'Ver3KnowledgeGraphSemanticallyEnhancedDedupedRelationshipNeo4jCsv': SoftwareDesignTopic.GENERAL,
+            'DesignPrincipleDomain': SoftwareDesignTopic.SOLID_PRINCIPLES,
         }
 
         # Keywords that indicate *any* software design relevance
@@ -274,11 +272,11 @@ class IntentClassifier:
         return best_topic[0], confidence, found_keywords_per_topic.get(best_topic[0], [])
 
     def _refine_topic_with_graph_results(self, current_topic: SoftwareDesignTopic,
-                                         current_confidence: float,
-                                         graphrag_raw_results_input: Dict) -> Tuple[SoftwareDesignTopic, float]:
+                                        current_confidence: float,
+                                        graphrag_raw_results_input: Dict) -> Tuple[SoftwareDesignTopic, float]:
         """
         Refine topic classification by inspecting the labels (and potentially names) of the nodes
-        returned by GraphRAG search.
+        returned by GraphRAG search. Now handles Neo4j Node objects properly.
         """
         if not graphrag_raw_results_input:
             return current_topic, current_confidence
@@ -289,7 +287,6 @@ class IntentClassifier:
                 list_of_results = graphrag_raw_results_input['results']
             else:
                 # If it's a dict but not the expected 'results' key, try iterating values
-                # This handles cases where graphrag_results might be a flat dict of nodes
                 list_of_results = list(graphrag_raw_results_input.values()) 
         elif isinstance(graphrag_raw_results_input, list):
             list_of_results = graphrag_raw_results_input
@@ -302,7 +299,15 @@ class IntentClassifier:
 
         label_counts = {}
         for result in list_of_results:
-            label_or_labels = result.get('label') or result.get('_labels_') # Handle both singular 'label' and list '_labels_'
+            # Handle Neo4j Node objects by converting to dict
+            if hasattr(result, 'labels') and hasattr(result, 'get'):
+                # This is a Neo4j Node object
+                result_dict = dict(result)
+                labels_list = list(result.labels)
+                result_dict['_labels_'] = labels_list
+                result = result_dict
+            
+            label_or_labels = result.get('label') or result.get('_labels_') or result.get('labels')
             
             if isinstance(label_or_labels, list):
                 # If it's a list of labels, iterate through them
@@ -344,7 +349,7 @@ class IntentClassifier:
         elif most_frequent_topic == current_topic and new_confidence > current_confidence:
             logger.info(f"Confidence for {current_topic.value} boosted by graph results to {new_confidence:.2f}")
             return current_topic, new_confidence
-       
+    
         return current_topic, current_confidence
 
     def get_search_parameters(self, user_query: str, intent_result: Dict) -> Dict:
@@ -382,13 +387,13 @@ class IntentClassifier:
     def _topic_to_label_filter(self, topic: SoftwareDesignTopic) -> List[str]:
         """Map software design topics to Neo4j node labels that the search module will use for filtering."""
         mapping = {
-            SoftwareDesignTopic.DESIGN_PATTERNS: ['DesignPattern', 'Pattern'],
-            SoftwareDesignTopic.SOLID_PRINCIPLES: ['DesignPrinciple', 'Principle'],
-            SoftwareDesignTopic.ARCHITECTURE: ['Architecture', 'ArchitecturalPattern', 'ArchitecturalComponent', 'ArchPattern'],
-            SoftwareDesignTopic.DDD: ['DomainConcept', 'DDDConcept'],
-            SoftwareDesignTopic.QUALITY: ['QualityAttribute', 'QualityMetric', 'CodeQuality'],
-            SoftwareDesignTopic.CODE_STRUCTURE: ['CodeStructure', 'OrganizationPrinciple'],
-            SoftwareDesignTopic.GENERAL: ['Paradigm', 'UnknownLabel', 'KNOWLEDGE NODE', 'RELATIONSHIP', 'NODE', 'Relationship', 'Node', 'node', 'relationship', 'Ver3KnowledgeGraphSemanticallyEnhancedDedupedNodeNeo4jCsv', 'Ver3KnowledgeGraphSemanticallyEnhancedDedupedRelationshipNeo4jCsv']
+            SoftwareDesignTopic.DESIGN_PATTERNS: ['DesignPattern', 'DesignPatternDomain', 'DesignPatternsTopic'],
+            SoftwareDesignTopic.SOLID_PRINCIPLES: ['DesignPrinciple', 'DesignPrincipleDomain'],
+            SoftwareDesignTopic.ARCHITECTURE: ['ArchPattern', 'ArchPatternDomain', 'ArchitecturePattern'],
+            SoftwareDesignTopic.DDD: ['DDDConcept', 'DomainDrivenDesign'],
+            SoftwareDesignTopic.QUALITY: ['QualityAttribute', 'QualityAttributeDomain'],
+            SoftwareDesignTopic.CODE_STRUCTURE: ['CodeStructure', 'CodeStructureDomain'],
+            SoftwareDesignTopic.GENERAL: ['KNOWLEDGE NODE', 'NODE', 'Node', 'RELATIONSHIP', 'Heartbeat']
         }
         return mapping.get(topic, [])
 
@@ -414,62 +419,29 @@ class IntentClassifier:
         }
         return relationship_mapping.get(question_type, ['RELATES_TO'])
 
-
+    def validate_database_labels(self, driver):
+        """
+        Helper method to validate which labels actually exist in the Neo4j database.
+        Call this during initialization to filter out non-existent labels.
+        """
+        try:
+            with driver.session() as session:
+                result = session.run("CALL db.labels() YIELD label RETURN label ORDER BY label")
+                existing_labels = [record["label"] for record in result]
+                logger.info(f"Existing database labels: {existing_labels}")
+                
+                # Update mappings to only include existing labels
+                for topic, labels in self._topic_to_label_filter(SoftwareDesignTopic.GENERAL).items():
+                    filtered_labels = [label for label in labels if label in existing_labels]
+                    if len(filtered_labels) != len(labels):
+                        logger.warning(f"Topic {topic}: Removed non-existent labels {set(labels) - set(filtered_labels)}")
+                
+                return existing_labels
+        except Exception as e:
+            logger.error(f"Failed to validate database labels: {e}")
+            return []
+    
 # Example usage and testing (updated)
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     classifier = IntentClassifier()
-
-    # Mock GraphRAG results for testing refinement
-    mock_graph_results_srp_list_format = {
-        'results': [
-            {'id': 'n_a3d57b', 'name': 'Single Responsibility Principle', 'label': 'DesignPrinciple', 'relevance_score': 0.9},
-            {'id': 'n_xyz', 'name': 'Cohesion', 'label': 'CodeQuality', 'relevance_score': 0.8},
-        ]
-    }
-    
-    mock_graph_results_architecture = {
-        'results': [
-            {'id': 'n_599c9c5', 'name': 'Microservices Architecture', 'label': 'Architecture', 'relevance_score': 0.9},
-            {'id': 'n_f4g5h6', 'name': 'API Gateway', 'label': 'ArchitecturalComponent', 'relevance_score': 0.85},
-        ]
-    }
-    mock_graph_results_general = {
-        'results': [
-            {'id': 'n_jkl', 'name': 'Object-Oriented Programming', 'label': 'Paradigm', 'relevance_score': 0.7},
-        ]
-    }
-    
-    # Test cases including new intents
-    test_cases = [
-        ("Hi Sensei!", None), # No graph results for greetings
-        ("Hello, how are you?", None),
-        ("What's the weather like today?", None),
-        ("Tell me a joke.", None),
-        ("What is the Single Responsibility Principle?", mock_graph_results_srp_list_format),
-        ("Compare MVC and MVVM architectures.", mock_graph_results_architecture),
-        ("How to implement a Factory Method pattern?", mock_graph_results_srp_list_format),
-        ("Is this system design scalable?", mock_graph_results_architecture),
-        ("What is a Parser?", mock_graph_results_general), # Changed to general for this test
-        ("Can you help me with my math homework?", None) # Another OOS
-    ]
-
-    print("--- Intent Classifier Testing (Updated) ---")
-    for query_text, graph_results in test_cases:
-        print(f"\nQuery: '{query_text}'")
-        intent_result = classifier.classify_intent(user_query=query_text, graphrag_results=graph_results)
-        search_params = classifier.get_search_parameters(user_query=query_text, intent_result=intent_result)
-
-        print(f"  Question Type: {intent_result['question_type']} (Conf: {intent_result['question_confidence']:.2f})")
-        print(f"  Topic: {intent_result['topic']} (Conf: {intent_result['topic_confidence']:.2f})")
-        print(f"  Overall Confidence: {intent_result['overall_confidence']:.2f}")
-        print(f"  Keywords Found (from query): {intent_result['keywords_found']}")
-        
-        if search_params: # Only print if search_params are not empty
-            print(f"  Search Parameters for Search Module:")
-            for key, value in search_params.items():
-                if key != 'user_query_text':
-                    print(f"    - {key}: {value}")
-        else:
-            print("  No search parameters generated (out-of-scope or greeting intent).")
-

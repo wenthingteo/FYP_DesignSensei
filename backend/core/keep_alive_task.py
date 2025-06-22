@@ -63,7 +63,7 @@ def _run_single_keep_alive_query():
 
 def start_keep_alive_scheduler():
     """Starts a background thread to run the keep-alive query periodically."""
-    interval_hours = int(os.getenv("NEO4J_KEEP_ALIVE_INTERVAL_HOURS", 70))
+    interval_hours = int(os.getenv("NEO4J_KEEP_ALIVE_INTERVAL_HOURS", 50))
     interval_seconds = interval_hours * 3600
 
     # For debugging, you can keep a shorter interval like 5 minutes (300 seconds)
