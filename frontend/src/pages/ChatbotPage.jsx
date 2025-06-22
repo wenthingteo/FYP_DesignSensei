@@ -96,11 +96,31 @@ const ChatbotPage = () => {
   const handleSend = async (messageContentToSend = inputValue.trim()) => {
     if (!messageContentToSend) return;
 
+    setInputValue("");
+
+    const userMessage = {
+      role: "user",
+      content: messageContentToSend,
+    };
+
+    const thinkingMessage = {
+      role: "bot",
+      content: "Thinking...",
+      isThinking: true,
+    };
+
+    setChatData((prev) => ({
+      ...prev,
+      messages: [...prev.messages, userMessage, thinkingMessage],
+    }));
+
+    setIsTyping(true);
+    setTypingMessageContent("");
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     if (chatData.currentConversation === "new" || !chatData.currentConversation) {
       try {
-        setTypingMessageContent("");
-        setIsTyping(true);
-        
         const response = await fetch("http://127.0.0.1:8000/api/chat/", {
           method: "POST",
           headers: {
@@ -114,16 +134,14 @@ const ChatbotPage = () => {
           }),
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to create conversation");
-        }
+        if (!response.ok) throw new Error("Failed to create conversation");
 
         const data = await response.json();
         const { conversation_id, user_message, ai_response } = data;
 
         const newConversation = {
           id: conversation_id,
-          title: messageContentToSend.substring(0, 50) || "New Conversation",
+          title: messageContentToSend.substring(0, 30) || "New Conversation",
           created_at: new Date().toISOString(),
         };
 
@@ -131,11 +149,12 @@ const ChatbotPage = () => {
           ...prev,
           conversations: [newConversation, ...prev.conversations],
           currentConversation: conversation_id,
-          messages: prev.messages.concat([user_message]),
         }));
-        
+
         const fullAiResponseContent = ai_response.content;
         let i = 0;
+        const typingSpeed = 2;
+
         const typingInterval = setInterval(() => {
           if (i < fullAiResponseContent.length) {
             setTypingMessageContent(fullAiResponseContent.substring(0, i + 1));
@@ -145,25 +164,23 @@ const ChatbotPage = () => {
             setIsTyping(false);
             setTypingMessageContent("");
 
-            setChatData((prev) => ({
-              ...prev,
-              messages: prev.messages.concat([{ ...ai_response, content: fullAiResponseContent }]),
-            }));
+            setChatData((prev) => {
+              const updatedMessages = [...prev.messages];
+              updatedMessages[updatedMessages.length - 1] = {
+                ...ai_response,
+                content: fullAiResponseContent,
+              };
+              return { ...prev, messages: updatedMessages };
+            });
           }
-        }, 20);
+        }, typingSpeed);
 
-        setInputValue("");
-        return;
-      } catch (error) {
-        console.error("Error creating conversation:", error);
+      } catch (err) {
+        console.error("API error:", err);
         setIsTyping(false);
         setTypingMessageContent("");
-        return;
       }
     }
-
-    await sendMessage(messageContentToSend);
-    setInputValue("");
   };
 
   const handleKeyPress = (e) => {
@@ -373,23 +390,89 @@ const ChatbotPage = () => {
       />
 
       {/* Chat Input */}
-      <div className="p-5 d-flex align-items-center">
-        <input
-          ref={inputRef}
-          type="text"
-          className="form-control me-2"
-          placeholder="Have a question on software design? Just ask!"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyPress}
-        />
-        <button
-          className="btn bg-blue-dark text-white"
-          onClick={handleSend}
-          disabled={!inputValue.trim()}
+      <div
+        style={{
+          padding: "1.5rem 2rem",
+          backgroundColor: "#ffffff",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "1rem",
+            maxWidth: "1200px",
+            margin: "0 auto",
+          }}
         >
-          <FontAwesomeIcon icon={faPaperPlane} />
-        </button>
+          <div
+            style={{
+              flex: 1,
+              position: "relative",
+              backgroundColor: "#f8fafc",
+              borderRadius: "1.5rem",
+              border: "1px solidrgb(179, 186, 194)",
+              transition: "all 0.2s ease",
+            }}
+          >
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Have a question on software design? Just ask!"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyPress}
+              style={{
+                width: "100%",
+                padding: "1.125rem 1.5rem",
+                border: "none",
+                borderRadius: "1.5rem",
+                backgroundColor: "transparent",
+                fontSize: "1.125rem",
+                outline: "none",
+                color: "#334155",
+              }}
+              onFocus={(e) => {
+                e.target.parentElement.style.borderColor = "#000000"
+                e.target.parentElement.style.boxShadow = "0 0 0 3px #3b82f6"
+              }}
+              onBlur={(e) => {
+                e.target.parentElement.style.borderColor = "#e2e8f0"
+                e.target.parentElement.style.boxShadow = "none"
+              }}
+            />
+          </div>
+          <button
+            style={{
+              width: "3rem",
+              height: "3rem",
+              borderRadius: "50%",
+              border: "none",
+              color: "white",
+              cursor: inputValue.trim() ? "pointer" : "not-allowed",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.2s ease",
+              boxShadow: inputValue.trim() ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none",
+            }}
+            className={inputValue.trim() ? "bg-blue-dark" : ""}
+            onClick={handleSend}
+            disabled={!inputValue.trim()}
+            onMouseEnter={(e) => {
+              if (inputValue.trim()) {
+                e.target.style.transform = "scale(1.05)"
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (inputValue.trim()) {
+                e.target.style.transform = "scale(1)"
+              }
+            }}
+          >
+            <FontAwesomeIcon icon={faPaperPlane} />
+          </button>
+        </div>
       </div>
     </div>
   );
