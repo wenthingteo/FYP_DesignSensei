@@ -75,6 +75,8 @@ class ChatbotAPIView(APIView):
             created_at=timezone.now(),
             metadata={} # This is now valid due to core/models.py fix
         )
+
+        conversation.save() 
        
         session_id = str(conversation.id)
        
@@ -163,6 +165,8 @@ class ChatbotAPIView(APIView):
             created_at=timezone.now(),
             metadata=ai_response_metadata # This is now valid due to core/models.py fix
         )
+
+        conversation.save() 
        
         # Add the AI's response to the context manager
         self.context_manager.add_message(

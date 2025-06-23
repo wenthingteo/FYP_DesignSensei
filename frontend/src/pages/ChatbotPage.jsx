@@ -9,6 +9,7 @@ import Sidebar from "../components/Sidebar";
 import WelcomePage from "../components/WelcomePage";
 import { ChatContext } from "../context/ChatContext";
 import useSendMessage from "../hooks/useSendMessage";
+import useSidebarUpdates from '../hooks/useSidebarUpdates';
 import './ChatbotPage.css';
 import DeleteConfirmationModal from "../components/DeleteConfirmationModal";
 
@@ -23,6 +24,7 @@ const ChatbotPage = () => {
 
   const { chatData, setChatData } = useContext(ChatContext);
   const { messages, currentConversation, conversations } = chatData;
+  const { triggerSidebarUpdate } = useSidebarUpdates();
 
   const [typingMessageContent, setTypingMessageContent] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -139,6 +141,8 @@ const ChatbotPage = () => {
         const fullAiResponseContent = ai_response.content;
         let i = 0;
         const typingSpeed = 0.5;
+
+        triggerSidebarUpdate();
 
         const typingInterval = setInterval(() => {
           if (i < fullAiResponseContent.length) {
