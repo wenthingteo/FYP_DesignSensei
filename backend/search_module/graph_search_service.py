@@ -124,7 +124,7 @@ class GraphSearchService:
         RETURN n,
             CASE 
                 WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText) THEN 0.9
-                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.7
+                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.6
                 ELSE 0.5 
             END AS fts_score,
             0.0 AS vec_score,
@@ -132,7 +132,6 @@ class GraphSearchService:
             [] AS relationships,
             [] AS reverse_relationships
         ORDER BY fts_score DESC
-        LIMIT 20
         """
         
         params = {'searchText': user_query_text}
@@ -344,7 +343,7 @@ class GraphSearchService:
         WITH n,
             CASE 
                 WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText) THEN 0.9
-                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.7
+                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.6
                 ELSE 0.5 
             END AS fts_score,
             0.0 AS vec_score
@@ -361,7 +360,6 @@ class GraphSearchService:
             collect(DISTINCT {type: type(rel), target_node_name: target.name, target_labels: labels(target), target_id: elementId(target)}) AS relationships,
             collect(DISTINCT {type: type(rev_rel), source_node_name: source.name, source_labels: labels(source), source_id: elementId(source)}) AS reverse_relationships
         ORDER BY fts_score DESC
-        LIMIT 20
         """
         
         # Ensure searchText is in params even if not used in WHERE
@@ -372,45 +370,6 @@ class GraphSearchService:
         logger.debug(f"Final Params: {params}")
         return query, params
 
-    # Add this debugging method to your GraphSearchService class
-    def debug_graph_contents(self):
-        """
-        Debug method to check what's actually in your knowledge graph
-        """
-        try:
-            # Check total node count
-            count_query = "MATCH (n) RETURN count(n) as total_nodes"
-            result = self.neo4j_client.run_cypher(count_query, {})
-            logger.info(f"Total nodes in graph: {result[0]['total_nodes'] if result else 0}")
-            
-            # Check available labels
-            labels_query = "CALL db.labels() YIELD label RETURN label ORDER BY label"
-            labels_result = self.neo4j_client.run_cypher(labels_query, {})
-            available_labels = [r['label'] for r in labels_result]
-            logger.info(f"Available labels: {available_labels}")
-            
-            # Check for quality-related nodes
-            quality_query = """
-            MATCH (n) 
-            WHERE toLower(coalesce(n.name, '')) CONTAINS 'quality' 
-            OR toLower(coalesce(n.description, '')) CONTAINS 'quality'
-            RETURN n.name as name, labels(n) as labels, n.description as description
-            LIMIT 10
-            """
-            quality_result = self.neo4j_client.run_cypher(quality_query, {})
-            logger.info(f"Quality-related nodes found: {len(quality_result)}")
-            for node in quality_result:
-                logger.info(f"  - {node['name']} ({node['labels']}): {node['description'][:100]}...")
-                
-            # Check sample nodes
-            sample_query = "MATCH (n) RETURN n.name as name, labels(n) as labels LIMIT 10"
-            sample_result = self.neo4j_client.run_cypher(sample_query, {})
-            logger.info("Sample nodes in graph:")
-            for node in sample_result:
-                logger.info(f"  - {node['name']} ({node['labels']})")
-                
-        except Exception as e:
-            logger.error(f"Error during graph debugging: {e}")
 
     def search_with_fallback(self, user_query_text: str, search_params: Dict, session_id: str) -> Dict:
         """
@@ -631,7 +590,7 @@ class GraphSearchService:
         WITH n,
             CASE 
                 WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText) THEN 0.9
-                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.7
+                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.6
                 ELSE 0.5 
             END AS fts_score,
             0.0 AS vec_score
@@ -643,7 +602,6 @@ class GraphSearchService:
             [] AS relationships,
             [] AS reverse_relationships
         ORDER BY relevance_score DESC
-        LIMIT 20
         """
         
         params = {'searchText': user_query_text}
