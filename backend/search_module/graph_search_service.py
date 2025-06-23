@@ -501,50 +501,6 @@ class GraphSearchService:
         logger.warning("No results found in Neo4j database")
         return {'results': []}
 
-    def _process_neo4j_results(self, raw_results: List[Dict], user_query_embedding: Optional[List[float]]) -> List[Dict]:
-        """
-        Processes raw results from Neo4j (dictionaries returned by run_cypher) into a standardized dictionary format.
-        Calculates a relevance score combining FTS, vector similarity, and node properties.
-        """
-        processed_data = []
-        for record in raw_results:
-            node_data_from_record = record.get("n")
-            if not node_data_from_record or not isinstance(node_data_from_record, dict):
-                logger.warning(f"Skipping record due to missing or invalid 'n' key: {record}")
-                continue
-
-            fts_score = record.get("fts_score", 0.0)
-            vec_score = record.get("vec_score", 0.0)
-            
-            node_embedding = node_data_from_record.get("embedding") # Get embedding directly from the node properties
-            # Ensure node_embedding is a list, convert if it's a Neo4j Vector object or None
-            if not isinstance(node_embedding, list) and node_embedding is not None:
-                 node_embedding = list(node_embedding) if hasattr(node_embedding, '__iter__') else None
-
-
-            semantic_sim_score = 0.0
-            if user_query_embedding and isinstance(node_embedding, list) and isinstance(user_query_embedding, list):
-                if len(user_query_embedding) == len(node_embedding):
-                    semantic_sim_score = self._cosine_similarity(user_query_embedding, node_embedding)
-                else:
-                    logger.warning(f"Embedding dimension mismatch for node {node_data_from_record.get('__id__', 'N/A')}. User: {len(user_query_embedding)}, Node: {len(node_embedding) if node_embedding else 'None'})")
-            
-            calculated_relevance_score = record.get("relevance_score", 0.0) 
-            
-            node_data = {
-                "node_id": node_data_from_record.get('__id__', 'N/A'),
-                "name": node_data_from_record.get("name") or node_data_from_record.get("title", "Untitled Concept"), 
-                "description": node_data_from_record.get("description") or node_data_from_record.get("content", ""), 
-                "label": node_data_from_record.get('__labels__', ['Unknown'])[0], 
-                "relevance_score": round(calculated_relevance_score, 2),
-                "source": node_data_from_record.get("source", "N/A"),
-                "page": node_data_from_record.get("page", "N/A"),
-                "relationships": record.get("relationships", []) + record.get("reverse_relationships", []) 
-            }
-            processed_data.append(node_data)
-        
-        return sorted(processed_data, key=lambda x: x.get('relevance_score', 0.0), reverse=True)
-
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
             """Calculates cosine similarity between two vectors."""
             if not vec1 or not vec2:

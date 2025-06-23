@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from "react";
 import useGetChats from "../hooks/useGetChats";
+import useSidebarUpdates from '../hooks/useSidebarUpdates';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEllipsisVertical, faPen, faTrash, faCheck, faTimes } from "@fortawesome/free-solid-svg-icons";
 import axios from "axios";
 
 function ConversationHistory({ onDeleteConfirmRequest }) {
   const { chatData, setChatData } = useGetChats();
-  const conversations = chatData?.conversations ?? [];
+  const { updateTrigger } = useSidebarUpdates();
+  let conversations = chatData?.conversations ?? [];  
   const currentId = chatData?.currentConversation;
   const menuRef = useRef(null);
   const inputRef = useRef(null);
@@ -34,6 +36,33 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
       inputRef.current.select();
     }
   }, [editingId]);
+
+  useEffect(() => {
+    console.log('useEffect triggered with updateTrigger:', updateTrigger);
+    
+    if (updateTrigger > 0) {
+      console.log('Sidebar update triggered, refreshing conversation list...');
+      console.log('Current conversations before sorting:', conversations);
+      
+      if (conversations.length > 0) {
+        // Sort and update the conversations
+        const sortedConversations = [...conversations].sort((a, b) => {
+          const timeA = new Date(a.updated_at || a.created_at);
+          const timeB = new Date(b.updated_at || b.created_at);
+          console.log(`Comparing ${a.title} (${timeA}) with ${b.title} (${timeB})`);
+          return timeB.getTime() - timeA.getTime();
+        });
+        
+        console.log('Sorted conversations:', sortedConversations);
+        
+        // Update the chatData with sorted conversations
+        setChatData(prev => ({
+          ...prev,
+          conversations: sortedConversations
+        }));
+      }
+    }
+  }, [updateTrigger, setChatData]);
 
   const handleConversationClick = async (conv) => {
     if (editingId) return;
