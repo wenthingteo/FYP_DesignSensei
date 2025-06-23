@@ -146,7 +146,7 @@ const ChatbotPage = () => {
 
         const typingInterval = setInterval(() => {
           if (i < fullAiResponseContent.length) {
-            setTypingMessageContent(fullAiResponseContent.substring(0, i + 1));
+            setTypingMessageContent(fullAiResponseContent.substring(0, i + 20));
             i++;
           } else {
             clearInterval(typingInterval);
