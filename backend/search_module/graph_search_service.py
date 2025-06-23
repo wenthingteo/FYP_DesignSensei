@@ -139,129 +139,55 @@ class GraphSearchService:
 
     def _process_neo4j_results(self, raw_results: List[Dict], user_query_embedding: Optional[List[float]]) -> List[Dict]:
         """
-        FIXED: Processes raw results from Neo4j handling both Node objects and dictionaries
-        More robust processing with better error handling and debugging
+        Process Neo4j results - calculate vector similarity here in Python
         """
         processed_data = []
         
-        logger.info(f"Processing {len(raw_results)} raw results...")
-        
         for i, record in enumerate(raw_results):
             try:
-                logger.debug(f"Processing record {i}: {record}")
-                
-                # Handle Neo4j Node objects vs dictionaries
-                node_data_from_record = record.get("n")
-                
-                if node_data_from_record is None:
-                    logger.warning(f"Skipping record {i} due to missing 'n' key: {record}")
+                node_data = record.get("n")
+                if not node_data:
                     continue
                 
-                # FIX: Don't skip valid Neo4j Node objects!
-                # The isinstance check was wrong - Neo4j Node objects are valid
-                logger.debug(f"Got node of type: {type(node_data_from_record)}")
+                # Handle Neo4j Node objects
+                if hasattr(node_data, 'element_id'):
+                    node_dict = dict(node_data)
+                    node_dict['__id__'] = str(node_data.element_id)
+                    node_dict['__labels__'] = list(node_data.labels)
+                    node_data = node_dict
                 
-                # Convert Neo4j Node object to dictionary if needed
-                if hasattr(node_data_from_record, 'element_id'):  # This is a Neo4j Node object
-                    # Neo4j Node object - extract properties
-                    node_dict = dict(node_data_from_record)  # Get all properties
-                    node_dict['__id__'] = str(node_data_from_record.element_id)
-                    node_dict['__labels__'] = list(node_data_from_record.labels)
-                    node_data_from_record = node_dict
-                    logger.debug(f"Converted Neo4j Node to dict: {list(node_dict.keys())}")
-                elif isinstance(node_data_from_record, dict):
-                    # Already a dictionary - use as is
-                    logger.debug(f"Using existing dict with keys: {list(node_data_from_record.keys())}")
-                else:
-                    logger.warning(f"Unexpected node type: {type(node_data_from_record)}")
-                    # Don't skip - try to work with whatever we have
-                    logger.warning(f"Attempting to process anyway: {node_data_from_record}")
-
-                # Extract scores - with fallbacks
+                # Get FTS score from Neo4j
                 fts_score = float(record.get("fts_score", 0.0))
-                vec_score = float(record.get("vec_score", 0.0))
                 
-                logger.debug(f"Scores - FTS: {fts_score}, VEC: {vec_score}")
-                
-                # Handle embedding with better error handling
-                node_embedding = node_data_from_record.get("embedding")
-                if node_embedding and not isinstance(node_embedding, list):
-                    try:
-                        node_embedding = list(node_embedding) if hasattr(node_embedding, '__iter__') else None
-                    except Exception as e:
-                        logger.warning(f"Failed to convert embedding to list: {e}")
-                        node_embedding = None
-
-                # Calculate semantic similarity
+                # Calculate vector similarity in Python
                 semantic_sim_score = 0.0
+                node_embedding = node_data.get("embedding")
+                
                 if (user_query_embedding and isinstance(node_embedding, list) and 
-                    isinstance(user_query_embedding, list) and len(user_query_embedding) == len(node_embedding)):
+                    len(user_query_embedding) == len(node_embedding)):
                     semantic_sim_score = self._cosine_similarity(user_query_embedding, node_embedding)
-                    logger.debug(f"Semantic similarity: {semantic_sim_score}")
+                    logger.debug(f"Calculated semantic similarity: {semantic_sim_score}")
                 
-                # Calculate final relevance score properly
-                calculated_relevance_score = (fts_score * 0.7 + semantic_sim_score * 0.3)
+                # Combine scores (no misleading vec_score from Neo4j)
+                final_relevance_score = (fts_score * 0.7 + semantic_sim_score * 0.3)
                 
-                # Get node properties with robust fallbacks
-                node_name = (node_data_from_record.get("name") or 
-                            node_data_from_record.get("title") or 
-                            node_data_from_record.get("concept_name") or 
-                            "Unknown Concept")
-                
-                node_description = (node_data_from_record.get("description") or 
-                                node_data_from_record.get("content") or 
-                                node_data_from_record.get("summary") or 
-                                "No description available")
-                
-                # Get labels with fallback
-                node_labels = node_data_from_record.get('__labels__', [])
-                if not node_labels:
-                    # Try to get labels from Neo4j Node object if available
-                    if hasattr(node_data_from_record, 'labels'):
-                        node_labels = list(node_data_from_record.labels)
-                    else:
-                        node_labels = ['Unknown']
-                
-                primary_label = node_labels[0] if node_labels else 'Unknown'
-                
-                # Build processed node data
-                node_data = {
-                    "node_id": node_data_from_record.get('__id__', f"node_{i}"),
-                    "name": node_name,
-                    "description": node_description,
-                    "label": primary_label,
-                    "relevance_score": round(calculated_relevance_score, 2),
-                    "source": node_data_from_record.get("source", "Neo4j Database"),
-                    "page": node_data_from_record.get("page", "N/A"),
-                    "relationships": record.get("relationships", []) + record.get("reverse_relationships", [])
+                # Build result
+                node_result = {
+                    "name": node_data.get("name", "Unknown"),
+                    "description": node_data.get("description", "No description"),
+                    "fts_score": round(fts_score, 3),
+                    "semantic_score": round(semantic_sim_score, 3),  # Clear naming
+                    "relevance_score": round(final_relevance_score, 3),
+                    "relationships": record.get("relationships", [])
                 }
                 
-                logger.debug(f"Created node data: {node_data}")
+                processed_data.append(node_result)
                 
-                # More lenient filtering - only exclude if we have no meaningful content at all
-                if (node_data["name"] and 
-                    node_data["name"] not in ["Unknown Concept", ""] and
-                    node_data["relevance_score"] > 0):
-                    processed_data.append(node_data)
-                    logger.debug(f"Added node: {node_data['name']} (score: {node_data['relevance_score']})")
-                else:
-                    logger.warning(f"Filtered out node: name='{node_data['name']}', score={node_data['relevance_score']}")
-                    
             except Exception as e:
-                logger.error(f"Error processing record {i}: {record}")
-                logger.error(f"Exception: {e}", exc_info=True)
+                logger.error(f"Error processing record {i}: {e}")
                 continue
         
-        # Sort by relevance score
-        processed_data.sort(key=lambda x: x.get('relevance_score', 0.0), reverse=True)
-        
-        logger.info(f"Successfully processed {len(processed_data)} nodes from {len(raw_results)} raw results")
-        
-        # Debug: log the first few results
-        for i, node in enumerate(processed_data[:3]):
-            logger.info(f"Result {i+1}: {node['name']} (score: {node['relevance_score']}, label: {node['label']})")
-        
-        return processed_data
+        return sorted(processed_data, key=lambda x: x['relevance_score'], reverse=True)
 
 
     # Also add this debugging method to help identify the issue:
@@ -299,9 +225,9 @@ class GraphSearchService:
                             relationship_types: List[str], extracted_concepts: List[str],
                             min_relevance_score: float, keywords_from_intent: List[str]) -> Tuple[str, Dict]:
         """
-        Build Cypher query with better error handling and proper scoring
+        Build Cypher query - FTS scoring in Neo4j, vector similarity in Python
         """
-        logger.info(f"Building Cypher Query: user_query_text='{user_query_text}', topic_labels={topic_labels}, extracted_concepts={extracted_concepts}")
+        logger.info(f"Building Cypher Query: user_query_text='{user_query_text}', topic_labels={topic_labels}")
         
         params = {}
         
@@ -329,7 +255,7 @@ class GraphSearchService:
                 ])
                 params[concept_param] = concept
         
-        # Add label filtering (only if labels exist)
+        # Add label filtering
         if topic_labels:
             label_conditions = " OR ".join([f"'{label}' IN labels(n)" for label in topic_labels])
             where_conditions.append(f"({label_conditions})")
@@ -338,36 +264,32 @@ class GraphSearchService:
         if where_conditions:
             query += "WHERE " + " OR ".join(where_conditions)
         
-        # Add scoring logic
+        # Add FTS scoring (no misleading vec_score)
         query += """
         WITH n,
             CASE 
                 WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText) THEN 0.9
                 WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.6
                 ELSE 0.5 
-            END AS fts_score,
-            0.0 AS vec_score
+            END AS fts_score
         """
         
-        # Add relationships
+        # Add relationships and return
         query += """
         OPTIONAL MATCH (n)-[rel]->(target)
         OPTIONAL MATCH (n)<-[rev_rel]-(source)
         RETURN DISTINCT n, 
             fts_score, 
-            vec_score, 
             n.embedding AS embedding,
-            collect(DISTINCT {type: type(rel), target_node_name: target.name, target_labels: labels(target), target_id: elementId(target)}) AS relationships,
-            collect(DISTINCT {type: type(rev_rel), source_node_name: source.name, source_labels: labels(source), source_id: elementId(source)}) AS reverse_relationships
+            collect(DISTINCT {type: type(rel), target_node_name: target.name}) AS relationships,
+            collect(DISTINCT {type: type(rev_rel), source_node_name: source.name}) AS reverse_relationships
         ORDER BY fts_score DESC
         """
         
-        # Ensure searchText is in params even if not used in WHERE
+        # Ensure searchText is in params
         if 'searchText' not in params:
             params['searchText'] = user_query_text or ""
         
-        logger.debug(f"Final Query: {query}")
-        logger.debug(f"Final Params: {params}")
         return query, params
 
 
