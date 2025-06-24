@@ -167,7 +167,10 @@ const FeedbackPage = () => {
           </div>
           
           <div className="text-center">
-            <button type="submit" className="btn bg-blue-dark text-white">Send Feedback</button>
+            <button type="submit" className="btn bg-blue-dark text-white"
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2C5E97')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#3980D0')}
+            >Send Feedback</button>
           </div>
         </form>
       </div>
