@@ -318,7 +318,7 @@ const ChatbotPage = () => {
           }}
         />
         <h1 className="fs-3 text-center flex-grow-1 m-0">
-          {currentConv?.title || "Design Sensei"}
+          {currentConv?.title || "Software Design Sensei"}
         </h1>
         <div style={{ width: "24px" }} />
         {/* Logout Button */}
