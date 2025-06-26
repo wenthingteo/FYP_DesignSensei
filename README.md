@@ -1,4 +1,4 @@
-# SDbot
+# Software Design Sensei
 A GraphRAG chatbot for teaching software design
 
 Instruction to start the chatbot
