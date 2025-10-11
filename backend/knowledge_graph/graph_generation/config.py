@@ -14,3 +14,13 @@ STORAGE_CONFIG = {
     'secret_key': 'qgFy0XsLD3DcIX22SbHMvTGlSKtE0F474mVtJF+J',
     'region': ' asia-southeast1'
 }
+
+NEO4J_CONFIG = {
+    'uri': 'neo4j+s://4b96273b.databases.neo4j.io',
+    'username': 'neo4j',
+    'password': '6nPdHsszkli6ZKfc-6cWM1Nc_uUFrY3Karhx05pU2Hs',
+    'database': 'neo4j',
+    'keep_alive_interval_hours': 5
+}
+
+DATABASE_URL = 'postgresql://db_fyp_designsensei_user:PeEvhxGY10cT5N99238oeGculsKOvie4@dpg-d11i2i8dl3ps73cqlp00-a.oregon-postgres.render.com/db_fyp_designsensei'
