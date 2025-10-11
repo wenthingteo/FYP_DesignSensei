@@ -351,7 +351,7 @@ def validate_neo4j_csv_output(nodes_file: str, relationships_file: str):
         print(f"  ❌ Found {invalid_refs} invalid references")
 
 if __name__ == "__main__":
-    input_file = "./knowledge_graph/graph_generation/versionKG/VER3knowledge_graph_semantically_enhanced_deduped.cypher"
+    input_file = "./knowledge_graph/graph_generation/new_1005_knowledge_graph.cypher"
     
     if os.path.exists(input_file):
         summary = generate_neo4j_csv_files(input_file)
