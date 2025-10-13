@@ -21,7 +21,11 @@ MATCH (h:Heartbeat {id: "aura_keep_alive"})
 RETURN h.lastUpdated AS lastUpdatedTimestamp, h.status AS status, h.id AS id
 
 2. use http://127.0.0.1:3000/ to connect the chatbot
-
+3. create virtual env
+```
+   a. python -m venv venv
+   b. venv\Scripts\activate
+```
 ___
 ## Knowledge Graph
 1. Change Design Principle Domain label by removing UNKNOWNLABEL node
