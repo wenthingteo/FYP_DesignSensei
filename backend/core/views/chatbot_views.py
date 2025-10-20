@@ -6,16 +6,14 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404
 import logging 
 
-# Import your Django models and serializers
 from core.models import Conversation, Message
 from core.serializers import MessageSerializer, ConversationSerializer
 
 # Import prompt engine components
+from prompt_engine.intent_classifier import IntentClassifier # Still needed for type hints, though instance is via PromptManager
 from prompt_engine.managers.prompt_manager import PromptManager
 from prompt_engine.managers.context_manager import ContextManager
 from prompt_engine.templates.base_template import UserExpertise, ResponseLength
-from prompt_engine.expertise_classifier import ExpertiseClassifier
-from prompt_engine.intent_classifier import IntentClassifier # Needed for search params
 
 # Import GraphRAG integration components
 from knowledge_graph.connection.neo4j_client import Neo4jClient
@@ -31,187 +29,205 @@ class ChatbotAPIView(APIView):
         super().__init__(**kwargs)
         self.context_manager = ContextManager()
         self.prompt_manager = PromptManager()
-        self.expertise_classifier = ExpertiseClassifier()
-        self.intent_classifier = IntentClassifier() # Initialize IntentClassifier for search params
        
         self.neo4j_client = None
         self.graph_search_service = None
         try:
-            # Initialize Neo4j client and graph search service
             self.neo4j_client = Neo4jClient()
             self.graph_search_service = GraphSearchService(self.neo4j_client)
             logger.info("ChatbotAPIView: Neo4jClient and GraphSearchService initialized successfully.")
         except Exception as e:
             logger.error(f"ChatbotAPIView: Failed to initialize Neo4jClient or GraphSearchService: {e}", exc_info=True)
-            self.neo4j_client = None
-            self.graph_search_service = None
-    
-    def post(self, request):
-        """Handle incoming chat messages."""
-        user_query = request.data.get('message')
-        session_id = request.data.get('session_id') # This 'session_id' will correspond to Conversation.id
-        response_length_str = request.data.get('response_length', 'medium').upper()
+            # Decide on fallback behavior:
+            # For now, we'll log the error and proceed without graph search
+            # You could also raise an exception here to immediately stop if search is critical
+            # raise Exception("Critical: Could not initialize graph search services.")
 
-        if not user_query or not session_id:
-            return Response({'error': 'Message and session_id are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    def post(self, request):
+        """Send message (and trigger AI response)"""
+        message_text = request.data.get('content')
+        conversation_id = request.data.get('conversation')
+
+        if not message_text:
+            return Response({'error': 'Message is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        conversation = None
+        if conversation_id:
+            conversation = get_object_or_404(Conversation, id=conversation_id, user=request.user)
+        else:
+            conversation = Conversation.objects.create(
+                user=request.user,
+                title='New Conversation', # Default title
+                created_at=timezone.now()
+            )
+
+        # Set conversation title based on the first message if it's still the default
+        if conversation.title == 'New Conversation' or conversation.title.strip() == '':
+            conversation.title = message_text[:50] # Use first 50 chars of message
+            conversation.save()
+
+        # Create and save user's message
+        user_message = Message.objects.create(
+            conversation=conversation,
+            sender=request.user.username,
+            content=message_text,
+            created_at=timezone.now(),
+            metadata={} # This is now valid due to core/models.py fix
+        )
+
+        conversation.save() 
+       
+        session_id = str(conversation.id)
+       
+        # Add the user's message to the context manager
+        self.context_manager.add_message(
+            session_id=session_id,
+            role='user',
+            content=message_text,
+            metadata={} # This is now valid due to core/models.py fix
+        )
+
+        # Get conversation context for the prompt engine from the context manager
+        conversation_context = self.context_manager.get_context(session_id)
+       
+        graphrag_results = {'results': []} # Initialize empty, will be populated by search module
 
         try:
-            # Ensure the Conversation object exists or create a new one
-            # Use request.user to link conversations to authenticated users
-            conversation, created = Conversation.objects.get_or_create(
-                id=session_id,
-                user=request.user,
-                defaults={'title': f'New Chat {timezone.now().strftime("%Y-%m-%d %H:%M")}'}
+            # --- Step 1: Initial Intent Classification ---
+            # Use the IntentClassifier instance owned by PromptManager
+            initial_intent_result = self.prompt_manager.intent_classifier.classify_intent(user_query=message_text)
+           
+            # --- Step 2: Generate Search Parameters based on Initial Intent ---
+            search_parameters = self.prompt_manager.intent_classifier.get_search_parameters(
+                user_query=message_text,
+                intent_result=initial_intent_result
             )
-            if created:
-                logger.info(f"New conversation created with ID: {session_id}")
-            else:
-                logger.info(f"Existing conversation retrieved with ID: {session_id}")
-
-            # 1. Get conversation history from the context manager
-            # We'll use the Django messages to build the history for context manager too
-            # Fetch messages associated with this conversation
-            db_messages = Message.objects.filter(conversation=conversation).order_by('timestamp')
-            
-            # Populate context_manager's history from DB messages for inference
-            # Ensure context_manager reflects the latest state, including what's in DB
-            self.context_manager.clear_session(session_id) # Clear to rebuild from DB
-            for msg in db_messages:
-                # Assuming metadata can be stored/retrieved from Message model if needed
-                self.context_manager.add_message(session_id, sender=msg.sender, text=msg.text)
-            
-            # Add current user query to context manager for inference
-            self.context_manager.add_message(session_id, sender='user', text=user_query)
-            
-            # Get the full conversation context (including the new user query)
-            conversation_history_for_inference = self.context_manager.get_history(session_id)
-
-            # 2. Dynamically infer user expertise based on the query and history
-            inferred_expertise = self.expertise_classifier.infer_expertise(user_query, conversation_history_for_inference)
-            
-            # 3. Update the context manager with the new expertise level
-            self.context_manager.set_user_expertise(session_id, inferred_expertise)
-
-            # 4. Perform Graph RAG search (using logic similar to SearchAPIView)
-            graphrag_results = {}
+           
+            # --- Step 3: Call the Graph Search Module with structured parameters ---
+            # Ensure graph_search_service was successfully initialized in __init__
             if self.graph_search_service:
-                # Classify intent for search parameters
-                initial_intent_result = self.intent_classifier.classify_intent(user_query)
-                search_parameters = self.intent_classifier.get_search_parameters(
-                    user_query=user_query,
-                    intent_result=initial_intent_result
-                )
-                logger.info(f"ChatbotAPIView: Calling GraphSearchService for '{user_query}' with params: {search_parameters}")
+                logger.info(f"ChatbotAPIView: Calling GraphSearchService for '{message_text}' with params: {search_parameters}")
+                # Pass the full search_parameters dictionary, NOT just a string from it.
                 graphrag_results = self.graph_search_service.search(
-                    user_query_text=user_query,
-                    search_params=search_parameters,
-                    session_id=session_id
+                    user_query_text=message_text, # Original query text for embedding
+                    search_params=search_parameters, # The structured parameters dictionary
+                    session_id=session_id # Session ID for context-aware search
                 )
                 logger.info(f"ChatbotAPIView: Received {len(graphrag_results.get('results', []))} results from GraphSearchService.")
             else:
-                logger.warning("ChatbotAPIView: GraphSearchService not available. Proceeding without RAG results.")
-            
-            # 5. Determine the response length
-            response_length = ResponseLength[response_length_str]
-
-            # 6. Process the query using the prompt manager with all gathered context
-            response_data = self.prompt_manager.process_query(
-                user_query=user_query,
-                session_id=session_id,
-                graphrag_results=graphrag_results, # Pass actual RAG results
-                conversation_context=conversation_history_for_inference, # Full history for LLM
-                user_expertise=inferred_expertise,
-                response_length=response_length
-            )
-            
-            bot_response_text = response_data.get('response', 'An error occurred or no response was generated.')
-            bot_metadata = response_data.get('metadata', {})
-
-            # 7. Save user message to the database
-            Message.objects.create(
-                conversation=conversation,
-                sender='user',
-                text=user_query,
-                timestamp=timezone.now()
-            )
-
-            # 8. Save bot response to the database
-            Message.objects.create(
-                conversation=conversation,
-                sender='bot',
-                text=bot_response_text,
-                timestamp=timezone.now(),
-                metadata=bot_metadata # Store any relevant metadata
-            )
-            
-            # Update conversation last_updated timestamp
-            conversation.last_updated = timezone.now()
-            conversation.save()
-
-            return Response(response_data, status=status.HTTP_200_OK)
-
-        except KeyError:
-            return Response({'error': f'Invalid response length: {response_length_str}. Must be SHORT, MEDIUM, or DETAILED.'}, status=status.HTTP_400_BAD_REQUEST)
+                logger.warning("ChatbotAPIView: GraphSearchService not available. Proceeding without GraphRAG results.")
+                # graphrag_results remains {'results': []}
+           
         except Exception as e:
-            logger.error(f"ChatbotAPIView: Error processing query: {e}", exc_info=True)
-            return Response({'error': f'An internal error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"ChatbotAPIView: Error during intent classification or graph search: {e}", exc_info=True)
+            # Ensure graphrag_results is still a dict even on error
+            graphrag_results = {'results': []}
+            # Depending on criticality, you might want to return an error to user here
+            # return Response({"error": f"Failed to retrieve knowledge: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # --- Step 4: Determine User Expertise and Response Length ---
+        # These can be dynamically determined based on user profile or conversation history.
+        user_expertise = UserExpertise.INTERMEDIATE
+        response_length = ResponseLength.MEDIUM
+       
+        # --- Step 5: Process the user's query using the PromptManager ---
+        # PromptManager's process_query will internally call classify_intent again,
+        # this time *with* the actual graphrag_results for refinement.
+        processed_result = self.prompt_manager.process_query(
+            user_query=message_text,
+            graphrag_results=graphrag_results, # Pass the results from the search module
+            conversation_context=conversation_context, # Pass the conversation history
+            user_expertise=user_expertise,
+            response_length=response_length
+        )
+       
+        # Safely get response text and metadata
+        ai_response_text = processed_result.get('response', "An error occurred generating response.")
+        ai_response_metadata = {
+            'intent': processed_result.get('metadata', {}).get('intent', {}),
+            'response_params': processed_result.get('response_params', {}),
+            'citations': processed_result.get('citations', []),
+            'user_level_after_response': processed_result.get('metadata', {}).get('expertise_level'),
+            'context_used': conversation_context # Store context snapshot if needed
+        }
+       
+        # Ensure AI response text is a string before saving
+        if not isinstance(ai_response_text, str):
+            ai_response_text = str(ai_response_text)
+            logger.warning(f"ChatbotAPIView: AI response was not a string. Converted to string: {ai_response_text[:100]}...")
+
+        # Create and save AI's response message
+        ai_message = Message.objects.create(
+            conversation=conversation,
+            sender='AI Chatbot',
+            content=ai_response_text,
+            created_at=timezone.now(),
+            metadata=ai_response_metadata # This is now valid due to core/models.py fix
+        )
+
+        conversation.save() 
+       
+        # Add the AI's response to the context manager
+        self.context_manager.add_message(
+            session_id=session_id,
+            role='assistant',
+            content=ai_response_text,
+            metadata=ai_response_metadata
+        )
+
+        return Response({
+            'conversation_id': conversation.id,
+            'user_message': MessageSerializer(user_message).data,
+            'ai_response': MessageSerializer(ai_message).data
+        })
 
     def get(self, request):
-        """Retrieve conversation history or a specific conversation."""
-        session_id = request.query_params.get('cid')
-        user = request.user
+        """Get all conversations and optionally messages from one"""
+        conversation_id = request.query_params.get('cid')
 
-        if session_id:
-            # Retrieve a specific conversation and its messages
-            conversation = get_object_or_404(Conversation, id=session_id, user=user)
-            messages = Message.objects.filter(conversation=conversation).order_by('timestamp')
-            
-            serialized_conversation = ConversationSerializer(conversation).data
+        conversations = Conversation.objects.filter(user=request.user).order_by('-created_at')
+        serialized_conversations = ConversationSerializer(conversations, many=True).data
+
+        if conversation_id:
+            conversation = get_object_or_404(Conversation, id=conversation_id, user=request.user)
+            messages = Message.objects.filter(conversation=conversation).order_by('created_at')
             serialized_messages = MessageSerializer(messages, many=True).data
-            
-            # Also populate ContextManager for this session from DB for continuity
-            self.context_manager.clear_session(session_id)
-            for msg in messages:
-                self.context_manager.add_message(session_id, sender=msg.sender, text=msg.text) # Assuming no complex metadata needed for history here
 
             return Response({
-                'current_conversation': serialized_conversation,
+                'conversations': serialized_conversations,
+                'current_conversation': ConversationSerializer(conversation).data,
                 'messages': serialized_messages
-            }, status=status.HTTP_200_OK)
-        else:
-            # Retrieve all conversations for the user
-            conversations = Conversation.objects.filter(user=user).order_by('-updated_at')
-            serialized_conversations = ConversationSerializer(conversations, many=True).data
-            
-            return Response({'conversations': serialized_conversations}, status=status.HTTP_200_OK)
-        
+            })
+
+        return Response({
+            'conversations': serialized_conversations,
+            'current_conversation': None,
+            'messages': []
+        })
+
     def put(self, request):
         """Rename conversation"""
         conversation_id = request.data.get('cid')
         new_title = request.data.get('title')
-        user = request.user
 
         if not conversation_id or not new_title:
-            return Response({'error': 'Conversation ID and new title are required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Conversation ID and new title are required'}, status=400)
 
-        conversation = get_object_or_404(Conversation, id=conversation_id, user=user)
+        conversation = get_object_or_404(Conversation, id=conversation_id, user=request.user)
         conversation.title = new_title
         conversation.save()
 
-        return Response({'message': 'Conversation renamed successfully', 'title': new_title}, status=status.HTTP_200_OK)
+        return Response({'message': 'Conversation renamed successfully', 'title': new_title})
 
     def delete(self, request):
         """Delete conversation"""
         conversation_id = request.query_params.get('cid')
-        user = request.user
 
         if not conversation_id:
-            return Response({'error': 'Conversation ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Conversation ID is required'}, status=400)
 
-        conversation = get_object_or_404(Conversation, id=conversation_id, user=user)
+        conversation = get_object_or_404(Conversation, id=conversation_id, user=request.user)
         conversation.delete()
-        
-        # Clear the session from the ContextManager as well
-        self.context_manager.clear_session(session_id=conversation_id)
 
-        return Response({'message': 'Conversation deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+        return Response({'message': 'Conversation deleted successfully'})

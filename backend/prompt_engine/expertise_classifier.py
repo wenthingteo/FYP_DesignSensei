@@ -61,7 +61,10 @@ class ExpertiseClassifier:
         if conversation_history:
             # Look at the most recent message's inferred expertise, if any
             # For simplicity, we'll just look at the last user message
-            last_user_message = next((m['text'] for m in reversed(conversation_history) if m['sender'] == 'user'), None)
+            last_user_message = next(
+                (m.get('content') or m.get('text') for m in reversed(conversation_history) if m.get('sender') == 'user'),
+                None
+            )
             if last_user_message:
                 last_query_lower = last_user_message.lower()
                 for pattern in self.beginner_patterns:
