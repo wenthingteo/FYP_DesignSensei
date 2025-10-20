@@ -194,13 +194,13 @@ class PromptEngineOrchestrator:
         # Add messages to context (user message first, then assistant message)
         self.context_manager.add_message(
             session_id=session_id,
-            role='user',
+            sender='user',
             content=user_query,
             metadata={'intent': llm_processing_result['metadata']['intent']}
         )
         self.context_manager.add_message(
             session_id=session_id,
-            role='assistant',
+            sender='assistant',
             content=raw_llm_response,
             metadata={
                 'intent': llm_processing_result['metadata']['intent'],

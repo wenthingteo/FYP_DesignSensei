@@ -95,8 +95,8 @@ const ChatbotPage = () => {
     return cookieValue;
   };
 
-  const handleSend = async (user_input = inputValue.trim()) => {
-    if (!user_input) return;
+  const handleSend = async (messageContentToSend = inputValue.trim()) => {
+    if (!messageContentToSend) return;
 
     setInputValue("");
 
@@ -113,11 +113,8 @@ const ChatbotPage = () => {
           },
           credentials: "include",
           body: JSON.stringify({
-            // content: messageContentToSend,
-            // conversation: null,
-            // HIHI 我换成这个test下 to check user de LEVEL
-            content: user_input,
-            conversation: conversation_id,
+            content: messageContentToSend,
+            conversation: null,
           }),
         });
 
@@ -130,7 +127,7 @@ const ChatbotPage = () => {
 
         const newConversation = {
           id: conversation_id,
-          title: user_input.substring(0, 50) || "New Conversation",
+          title: messageContentToSend.substring(0, 50) || "New Conversation",
           created_at: new Date().toISOString(),
         };
 
@@ -173,7 +170,7 @@ const ChatbotPage = () => {
       }
     }
 
-    await sendMessage(user_input);
+    await sendMessage(messageContentToSend);
   };
 
   const handleKeyPress = (e) => {
