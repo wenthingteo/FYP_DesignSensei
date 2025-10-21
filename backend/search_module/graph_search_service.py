@@ -225,16 +225,12 @@ class GraphSearchService:
                             relationship_types: List[str], extracted_concepts: List[str],
                             min_relevance_score: float, keywords_from_intent: List[str]) -> Tuple[str, Dict]:
         """
-        Build Cypher query - FTS scoring in Neo4j, vector similarity in Python
+        Build Cypher query - ONLY FTS scoring, vector similarity calculated in Python
         """
         logger.info(f"Building Cypher Query: user_query_text='{user_query_text}', topic_labels={topic_labels}")
         
         params = {}
-        
-        # Start with base query
         query = "MATCH (n) "
-        
-        # Build WHERE conditions
         where_conditions = []
         
         # Add text search conditions
@@ -260,38 +256,110 @@ class GraphSearchService:
             label_conditions = " OR ".join([f"'{label}' IN labels(n)" for label in topic_labels])
             where_conditions.append(f"({label_conditions})")
         
-        # Add WHERE clause if we have conditions
+        # Add WHERE clause
         if where_conditions:
             query += "WHERE " + " OR ".join(where_conditions)
         
-        # Add FTS scoring (no misleading vec_score)
+        # FTS scoring + return embeddings for Python calculation
         query += """
         WITH n,
             CASE 
                 WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText) THEN 0.9
+                WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($concept_0) THEN 0.8
                 WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.6
-                ELSE 0.5 
+                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($concept_0) THEN 0.5
+                ELSE 0.4
             END AS fts_score
-        """
         
-        # Add relationships and return
-        query += """
+        WHERE n.embedding IS NOT NULL
+        
         OPTIONAL MATCH (n)-[rel]->(target)
         OPTIONAL MATCH (n)<-[rev_rel]-(source)
+        
         RETURN DISTINCT n, 
             fts_score, 
-            n.embedding AS embedding,
+            n.embedding AS node_embedding,
             collect(DISTINCT {type: type(rel), target_node_name: target.name}) AS relationships,
             collect(DISTINCT {type: type(rev_rel), source_node_name: source.name}) AS reverse_relationships
         ORDER BY fts_score DESC
+        LIMIT 100
         """
         
-        # Ensure searchText is in params
         if 'searchText' not in params:
             params['searchText'] = user_query_text or ""
+        if 'concept_0' not in params:
+            params['concept_0'] = extracted_concepts[0] if extracted_concepts else ""
         
         return query, params
 
+    def _process_neo4j_results(self, raw_results: List[Dict], user_query_embedding: Optional[List[float]]) -> List[Dict]:
+        """
+        Process Neo4j results - calculate vector similarity in Python (NO GDS needed!)
+        """
+        processed_data = []
+        
+        for i, record in enumerate(raw_results):
+            try:
+                node_data = record.get("n")
+                if not node_data:
+                    continue
+                
+                # Handle Neo4j Node objects
+                if hasattr(node_data, 'element_id'):
+                    node_dict = dict(node_data)
+                    node_dict['__id__'] = str(node_data.element_id)
+                    node_dict['__labels__'] = list(node_data.labels)
+                else:
+                    node_dict = node_data
+                
+                # Get FTS score from Neo4j
+                fts_score = float(record.get("fts_score", 0.0))
+                
+                # Calculate vector similarity in Python using your existing method
+                semantic_score = 0.0
+                node_embedding = record.get("node_embedding")
+                
+                if user_query_embedding and node_embedding:
+                    if isinstance(node_embedding, list) and len(node_embedding) > 0:
+                        try:
+                            # This uses YOUR existing _cosine_similarity method - no GDS!
+                            semantic_score = self._cosine_similarity(user_query_embedding, node_embedding)
+                            logger.debug(f"Node '{node_dict.get('name', 'Unknown')}': FTS={fts_score:.3f}, Vector={semantic_score:.3f}")
+                        except Exception as e:
+                            logger.error(f"Error calculating cosine similarity: {e}")
+                            semantic_score = 0.0
+                
+                # Combine: 30% text matching + 70% semantic similarity
+                combined_score = (fts_score * 0.3 + semantic_score * 0.7)
+                
+                node_result = {
+                    "name": node_dict.get("name", "Unknown"),
+                    "description": node_dict.get("description", "No description"),
+                    "domain": node_dict.get("domain", ""),
+                    "labels": node_dict.get('__labels__', []),
+                    "fts_score": round(fts_score, 3),
+                    "semantic_score": round(semantic_score, 3),
+                    "relevance_score": round(combined_score, 3),
+                    "relationships": record.get("relationships", []),
+                    "reverse_relationships": record.get("reverse_relationships", [])
+                }
+                
+                processed_data.append(node_result)
+                
+            except Exception as e:
+                logger.error(f"Error processing record {i}: {e}", exc_info=True)
+                continue
+        
+        # Sort by relevance score
+        sorted_results = sorted(processed_data, key=lambda x: x['relevance_score'], reverse=True)
+        
+        # Log top results
+        if sorted_results:
+            logger.info(f"Top 3 results after vector similarity:")
+            for i, result in enumerate(sorted_results[:3], 1):
+                logger.info(f"  {i}. {result['name']}: FTS={result['fts_score']}, Vector={result['semantic_score']}, Combined={result['relevance_score']}")
+        
+        return sorted_results
 
     def search_with_fallback(self, user_query_text: str, search_params: Dict, session_id: str) -> Dict:
         """
@@ -528,3 +596,136 @@ class GraphSearchService:
         
         params = {'searchText': user_query_text}
         return query, params
+    
+    # add vector similarity,  on 21/10/2025
+    def build_search_query_with_embeddings(self, user_query_text, query_embedding, topic_labels=None, concepts=None):
+        """
+        Build Cypher query that combines:
+        1. Full-text search (FTS)
+        2. Vector similarity using embeddings
+        """
+        
+        # Base WHERE clause
+        where_conditions = []
+        
+        # Text matching conditions
+        text_conditions = [
+            "toLower(coalesce(n.name, '')) CONTAINS toLower($searchText)",
+            "toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)"
+        ]
+        
+        # Add concept matching
+        if concepts:
+            for i, concept in enumerate(concepts):
+                text_conditions.append(f"toLower(coalesce(n.name, '')) CONTAINS toLower($concept_{i})")
+                text_conditions.append(f"toLower(coalesce(n.description, '')) CONTAINS toLower($concept_{i})")
+        
+        where_conditions.append(f"({' OR '.join(text_conditions)})")
+        
+        # Add label filter if provided
+        if topic_labels:
+            label_conditions = " OR ".join([f"'{label}' IN labels(n)" for label in topic_labels])
+            where_conditions.append(f"({label_conditions})")
+        
+        where_clause = " OR ".join(where_conditions)
+        
+        # Build complete query with vector similarity
+        query = f"""
+        MATCH (n)
+        WHERE {where_clause}
+        
+        // Calculate FTS score (text matching)
+        WITH n,
+            CASE 
+                WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText) THEN 0.9
+                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.6
+                ELSE 0.5
+            END AS fts_score
+        
+        // Calculate vector similarity score (if embedding exists)
+        WITH n, fts_score,
+            CASE 
+                WHEN n.embedding IS NOT NULL AND $query_embedding IS NOT NULL THEN
+                    gds.similarity.cosine(n.embedding, $query_embedding)
+                ELSE 0.0
+            END AS vector_score
+        
+        // Combine scores: 40% FTS + 60% Vector
+        WITH n, fts_score, vector_score,
+            (fts_score * 0.4 + vector_score * 0.6) AS combined_score
+        
+        // Filter by minimum score
+        WHERE combined_score >= $min_score
+        
+        // Get relationships
+        OPTIONAL MATCH (n)-[rel]->(target)
+        OPTIONAL MATCH (n)<-[rev_rel]-(source)
+        
+        RETURN DISTINCT n, 
+            combined_score AS relevance_score,
+            fts_score,
+            vector_score,
+            collect(DISTINCT {{type: type(rel), target_node_name: target.name}}) AS relationships,
+            collect(DISTINCT {{type: type(rev_rel), source_node_name: source.name}}) AS reverse_relationships
+        ORDER BY combined_score DESC
+        LIMIT 50
+        """
+        
+        return query
+
+
+    # Example usage in your GraphSearchService
+    def search_graph(self, user_query_text, search_params):
+        """
+        Execute graph search with embeddings
+        """
+        # Generate query embedding
+        query_embedding = self.generate_embedding(user_query_text)
+        
+        # Extract parameters
+        topic_labels = search_params.get('topic_filter_labels', [])
+        concepts = search_params.get('extracted_concepts', [])
+        min_score = search_params.get('min_relevance_score', 0.5)
+        
+        # Build query
+        query = self.build_search_query_with_embeddings(
+            user_query_text=user_query_text,
+            query_embedding=query_embedding,
+            topic_labels=topic_labels,
+            concepts=concepts
+        )
+        
+        # Prepare parameters
+        params = {
+            'searchText': user_query_text,
+            'query_embedding': query_embedding,  # ← ADD THIS!
+            'min_score': min_score
+        }
+        
+        # Add concept parameters
+        if concepts:
+            for i, concept in enumerate(concepts):
+                params[f'concept_{i}'] = concept
+        
+        # Execute query
+        with self.neo4j_client.driver.session() as session:
+            result = session.run(query, params)
+            records = list(result)
+        
+        return records
+
+
+    def generate_embedding(self, text):
+        """
+        Generate embedding for query text
+        """
+        from openai import OpenAI
+        
+        client = OpenAI(api_key="your_api_key")
+        
+        response = client.embeddings.create(
+            input=text,
+            model="text-embedding-3-small"
+        )
+        
+        return response.data[0].embedding
