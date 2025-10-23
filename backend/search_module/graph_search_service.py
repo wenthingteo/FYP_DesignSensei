@@ -121,6 +121,7 @@ class GraphSearchService:
         MATCH (n)
         WHERE toLower(coalesce(n.name, '')) CONTAINS toLower($searchText)
         OR toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)
+        OR toLower(coalesce(n.domain, '')) CONTAINS toLower($searchText)
         RETURN n,
             CASE 
                 WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText) THEN 0.9
