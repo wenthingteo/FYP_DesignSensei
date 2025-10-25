@@ -125,8 +125,9 @@ class GraphSearchService:
         RETURN n,
             CASE 
                 WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText) THEN 0.9
-                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.6
-                ELSE 0.5 
+                WHEN toLower(coalesce(n.domain, '')) CONTAINS toLower($searchText) THEN 0.8
+                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.7
+                ELSE 0.6
             END AS fts_score,
             0.0 AS vec_score,
             n.embedding AS embedding,
@@ -221,76 +222,103 @@ class GraphSearchService:
             logger.info(f"  VEC Score: {record.get('vec_score', 'N/A')}")
             logger.info("-" * 30)
     
-    def _build_cypher_query(self, user_query_text: str, user_embedding: Optional[List[float]],
-                            topic_labels: List[str], search_depth: int,
-                            relationship_types: List[str], extracted_concepts: List[str],
-                            min_relevance_score: float, keywords_from_intent: List[str]) -> Tuple[str, Dict]:
-        """
-        Build Cypher query - ONLY FTS scoring, vector similarity calculated in Python
-        """
+    def _build_cypher_query(
+        self,
+        user_query_text: str,
+        user_embedding: Optional[List[float]],
+        topic_labels: List[str],
+        search_depth: int,
+        relationship_types: List[str],
+        extracted_concepts: List[str],
+        min_relevance_score: float,
+        keywords_from_intent: List[str]
+    ) -> Tuple[str, Dict]:
+
         logger.info(f"Building Cypher Query: user_query_text='{user_query_text}', topic_labels={topic_labels}")
-        
+
         params = {}
-        query = "MATCH (n) "
+        # ✅ Dynamically fetch real labels from the database
+        try:
+            existing_labels = self.neo4j_client.get_all_labels()
+            logger.info(f"📚 Existing labels in Neo4j: {existing_labels}")
+            valid_labels = [
+                l for l in existing_labels
+                if l.lower() in [
+                    "dddconcept", "designconcept", "designprinciple",
+                    "designpattern", "softwareprinciple",
+                    "domaindrivendesign", "architecture", "archpattern"
+                ]
+            ]
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch labels dynamically: {e}")
+            valid_labels = []
+
+        #Force ignore any placeholder topic_labels
+        if not valid_labels:
+            logger.warning("⚠️ No valid labels found, falling back to all nodes.")
+            labels_to_use = []
+        else:
+            labels_to_use = valid_labels  # Always use real DB labels, not old hardcoded ones
+
+
+        # --- Build the MATCH clause ---
+        if labels_to_use:
+            label_clause = "|".join(f"`{lbl}`" for lbl in labels_to_use)
+            query = f"MATCH (n:{label_clause}) "
+        else:
+            query = "MATCH (n) "
+
         where_conditions = []
-        
-        # Add text search conditions
+
+        # --- Add text search ---
         if user_query_text:
             where_conditions.extend([
                 "toLower(coalesce(n.name, '')) CONTAINS toLower($searchText)",
-                "toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)"
+                "toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)",
+                "toLower(coalesce(n.domain, '')) CONTAINS toLower($searchText)"
             ])
             params['searchText'] = user_query_text
-        
-        # Add concept matching
-        if extracted_concepts:
-            for i, concept in enumerate(extracted_concepts):
-                concept_param = f'concept_{i}'
-                where_conditions.extend([
-                    f"toLower(coalesce(n.name, '')) CONTAINS toLower(${concept_param})",
-                    f"toLower(coalesce(n.description, '')) CONTAINS toLower(${concept_param})"
-                ])
-                params[concept_param] = concept
-        
-        # Add label filtering
-        if topic_labels:
-            label_conditions = " OR ".join([f"'{label}' IN labels(n)" for label in topic_labels])
-            where_conditions.append(f"({label_conditions})")
-        
-        # Add WHERE clause
+
+        # --- Add extracted concepts ---
+        for i, concept in enumerate(extracted_concepts or []):
+            concept_param = f'concept_{i}'
+            where_conditions.extend([
+                f"toLower(coalesce(n.name, '')) CONTAINS toLower(${concept_param})",
+                f"toLower(coalesce(n.description, '')) CONTAINS toLower(${concept_param})",
+                f"toLower(coalesce(n.domain, '')) CONTAINS toLower(${concept_param})"
+            ])
+            params[concept_param] = concept
+
         if where_conditions:
             query += "WHERE " + " OR ".join(where_conditions)
-        
-        # FTS scoring + return embeddings for Python calculation
+
+        # --- Scoring logic ---
         query += """
         WITH n,
             CASE 
-                WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText) THEN 0.9
-                WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($concept_0) THEN 0.8
-                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.6
-                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($concept_0) THEN 0.5
-                ELSE 0.4
-            END AS fts_score
-        
+                WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText)
+                    THEN 1.0 - abs(size(n.name) - size($searchText)) * 0.01
+                WHEN toLower(coalesce(n.domain, '')) CONTAINS toLower($searchText)
+                    THEN 0.9 - abs(size(n.domain) - size($searchText)) * 0.01
+                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)
+                    THEN 0.7
+                ELSE 0.6
+            END AS fts_score,
+            0.0 AS vec_score
+
         WHERE n.embedding IS NOT NULL
-        
-        OPTIONAL MATCH (n)-[rel]->(target)
-        OPTIONAL MATCH (n)<-[rev_rel]-(source)
-        
-        RETURN DISTINCT n, 
-            fts_score, 
-            n.embedding AS node_embedding,
-            collect(DISTINCT {type: type(rel), target_node_name: target.name}) AS relationships,
-            collect(DISTINCT {type: type(rev_rel), source_node_name: source.name}) AS reverse_relationships
+
+        OPTIONAL MATCH path=(n)-[:RELATED_TO*1..2]-(m)
+        WITH n, collect(DISTINCT m.name) AS neighbors, fts_score, vec_score
+
+        RETURN DISTINCT n, fts_score, n.embedding AS node_embedding, neighbors
         ORDER BY fts_score DESC
         LIMIT 100
         """
-        
+
         if 'searchText' not in params:
             params['searchText'] = user_query_text or ""
-        if 'concept_0' not in params:
-            params['concept_0'] = extracted_concepts[0] if extracted_concepts else ""
-        
+
         return query, params
 
     def _process_neo4j_results(self, raw_results: List[Dict], user_query_embedding: Optional[List[float]]) -> List[Dict]:
@@ -508,6 +536,7 @@ class GraphSearchService:
             MATCH (n)
             WHERE toLower(coalesce(n.name, '')) CONTAINS toLower($searchText)
             OR toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)
+            OR toLower(coalesce(n.domain, '')) CONTAINS toLower($searchText)
             RETURN count(n) as count
             """
             result = self.neo4j_client.run_cypher(basic_query, {'searchText': user_query_text})
@@ -520,6 +549,7 @@ class GraphSearchService:
                 MATCH (n)
                 WHERE toLower(coalesce(n.name, '')) CONTAINS toLower($searchText)
                 OR toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)
+                OR toLower(coalesce(n.domain, '')) CONTAINS toLower($searchText)
                 RETURN n.name as name, labels(n) as labels
                 LIMIT 3
                 """
@@ -575,16 +605,21 @@ class GraphSearchService:
         """
         query = """
         MATCH (n)
-        WHERE toLower(coalesce(n.name, '')) CONTAINS toLower($searchText)
-        OR toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)
-        OR toLower(coalesce(n.title, '')) CONTAINS toLower($searchText)
+            WHERE toLower(coalesce(n.name, '')) CONTAINS toLower($searchText)
+            OR toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)
+            OR toLower(coalesce(n.domain, '')) CONTAINS toLower($searchText)
         WITH n,
             CASE 
-                WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText) THEN 0.9
-                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.6
-                ELSE 0.5 
+                WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText)
+                    THEN 1.0 - abs(size(n.name) - size($searchText)) * 0.01
+                WHEN toLower(coalesce(n.domain, '')) CONTAINS toLower($searchText)
+                    THEN 0.9 - abs(size(n.domain) - size($searchText)) * 0.01
+                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)
+                    THEN 0.6
+                ELSE 0.5
             END AS fts_score,
             0.0 AS vec_score
+
         RETURN DISTINCT n, 
             fts_score, 
             vec_score, 
@@ -639,8 +674,9 @@ class GraphSearchService:
         WITH n,
             CASE 
                 WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText) THEN 0.9
-                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.6
-                ELSE 0.5
+                WHEN toLower(coalesce(n.domain, '')) CONTAINS toLower($concept_0) THEN 0.8
+                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText) THEN 0.7
+                ELSE 0.6
             END AS fts_score
         
         // Calculate vector similarity score (if embedding exists)
