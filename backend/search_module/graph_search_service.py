@@ -222,102 +222,56 @@ class GraphSearchService:
             logger.info(f"  VEC Score: {record.get('vec_score', 'N/A')}")
             logger.info("-" * 30)
     
-    def _build_cypher_query(
-        self,
-        user_query_text: str,
-        user_embedding: Optional[List[float]],
-        topic_labels: List[str],
-        search_depth: int,
-        relationship_types: List[str],
-        extracted_concepts: List[str],
-        min_relevance_score: float,
-        keywords_from_intent: List[str]
-    ) -> Tuple[str, Dict]:
-
+    def _build_cypher_query(self, user_query_text: str, user_embedding: Optional[List[float]],
+                            topic_labels: List[str], search_depth: int,
+                            relationship_types: List[str], extracted_concepts: List[str],
+                            min_relevance_score: float, keywords_from_intent: List[str]) -> Tuple[str, Dict]:
+        """
+        Build Cypher query with cleaned + fuzzy search support
+        """
         logger.info(f"Building Cypher Query: user_query_text='{user_query_text}', topic_labels={topic_labels}")
 
         params = {}
-        # ✅ Dynamically fetch real labels from the database
-        try:
-            existing_labels = self.neo4j_client.get_all_labels()
-            logger.info(f"📚 Existing labels in Neo4j: {existing_labels}")
-            valid_labels = [
-                l for l in existing_labels
-                if l.lower() in [
-                    "dddconcept", "designconcept", "designprinciple",
-                    "designpattern", "softwareprinciple",
-                    "domaindrivendesign", "architecture", "archpattern"
-                ]
-            ]
-        except Exception as e:
-            logger.warning(f"⚠️ Could not fetch labels dynamically: {e}")
-            valid_labels = []
-
-        #Force ignore any placeholder topic_labels
-        if not valid_labels:
-            logger.warning("⚠️ No valid labels found, falling back to all nodes.")
-            labels_to_use = []
-        else:
-            labels_to_use = valid_labels  # Always use real DB labels, not old hardcoded ones
-
-
-        # --- Build the MATCH clause ---
-        if labels_to_use:
-            label_clause = "|".join(f"`{lbl}`" for lbl in labels_to_use)
-            query = f"MATCH (n:{label_clause}) "
-        else:
-            query = "MATCH (n) "
-
+        query = "MATCH (n) "
         where_conditions = []
 
-        # --- Add text search ---
-        if user_query_text:
-            where_conditions.extend([
-                "toLower(coalesce(n.name, '')) CONTAINS toLower($searchText)",
-                "toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)",
-                "toLower(coalesce(n.domain, '')) CONTAINS toLower($searchText)"
-            ])
-            params['searchText'] = user_query_text
+        # ✅ 1. Clean punctuation and lowercase
+        cleaned_text = re.sub(r"[^a-zA-Z0-9\s]", "", user_query_text).strip().lower()
 
-        # --- Add extracted concepts ---
-        for i, concept in enumerate(extracted_concepts or []):
-            concept_param = f'concept_{i}'
-            where_conditions.extend([
-                f"toLower(coalesce(n.name, '')) CONTAINS toLower(${concept_param})",
-                f"toLower(coalesce(n.description, '')) CONTAINS toLower(${concept_param})",
-                f"toLower(coalesce(n.domain, '')) CONTAINS toLower(${concept_param})"
-            ])
-            params[concept_param] = concept
+        # ✅ 2. Split into words for flexible matching
+        words = [w for w in cleaned_text.split() if w]
 
+        # ✅ 3. Build flexible OR conditions
+        for i, word in enumerate(words):
+            param_name = f"word_{i}"
+            where_conditions.append(
+                f"(toLower(coalesce(n.name, '')) CONTAINS ${param_name} "
+                f"OR toLower(coalesce(n.description, '')) CONTAINS ${param_name} "
+                f"OR toLower(coalesce(n.domain, '')) CONTAINS ${param_name})"
+            )
+            params[param_name] = word
+
+        # ✅ Combine conditions with OR
         if where_conditions:
             query += "WHERE " + " OR ".join(where_conditions)
 
-        # --- Scoring logic ---
-        query += """
-        WITH n,
-            CASE 
-                WHEN toLower(coalesce(n.name, '')) CONTAINS toLower($searchText)
-                    THEN 1.0 - abs(size(n.name) - size($searchText)) * 0.01
-                WHEN toLower(coalesce(n.domain, '')) CONTAINS toLower($searchText)
-                    THEN 0.9 - abs(size(n.domain) - size($searchText)) * 0.01
-                WHEN toLower(coalesce(n.description, '')) CONTAINS toLower($searchText)
-                    THEN 0.7
-                ELSE 0.6
-            END AS fts_score,
-            0.0 AS vec_score
+        # ✅ Keep your FTS + relationship logic
+        query += f"""
+            WITH n,
+                CASE 
+                    WHEN toLower(coalesce(n.name, '')) CONTAINS '{cleaned_text}' THEN 1.0
+                    WHEN toLower(coalesce(n.domain, '')) CONTAINS '{cleaned_text}' THEN 0.9
+                    WHEN toLower(coalesce(n.description, '')) CONTAINS '{cleaned_text}' THEN 0.7
+                    ELSE 0.5
+                END AS fts_score
+            WHERE n.embedding IS NOT NULL
 
-        WHERE n.embedding IS NOT NULL
-
-        OPTIONAL MATCH path=(n)-[:RELATED_TO*1..2]-(m)
-        WITH n, collect(DISTINCT m.name) AS neighbors, fts_score, vec_score
-
-        RETURN DISTINCT n, fts_score, n.embedding AS node_embedding, neighbors
-        ORDER BY fts_score DESC
-        LIMIT 100
+            OPTIONAL MATCH path=(n)-[:RELATED_TO*1..{search_depth}]-(m)
+            WITH n, collect(DISTINCT m.name) AS neighbors, fts_score
+            RETURN DISTINCT n, fts_score, n.embedding AS node_embedding, neighbors
+            ORDER BY fts_score DESC
+            LIMIT 100
         """
-
-        if 'searchText' not in params:
-            params['searchText'] = user_query_text or ""
 
         return query, params
 
