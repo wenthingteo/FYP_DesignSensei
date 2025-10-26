@@ -28,6 +28,11 @@ const ChatbotPage = () => {
 
   const [typingMessageContent, setTypingMessageContent] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  
+  // NEW: Store full AI response for tab switching recovery
+  const fullAiResponseRef = useRef("");
+  const typingIntervalRef = useRef(null);
+  const currentIndexRef = useRef(0);
 
   const [showWelcomePage, setShowWelcomePage] = useState(
     currentConversation === "new" || (!currentConversation && messages.length === 0)
@@ -37,18 +42,78 @@ const ChatbotPage = () => {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [conversationToDeleteId, setConversationToDeleteId] = useState(null);
 
-  const sendMessage = useSendMessage(chatData, setChatData, setTypingMessageContent, setIsTyping);
-
+  const sendMessage = useSendMessage(
+    chatData, 
+    setChatData, 
+    setTypingMessageContent, 
+    setIsTyping,
+    fullAiResponseRef,
+    typingIntervalRef,
+    currentIndexRef
+  );
   const currentConv = conversations.find(c => c.id === currentConversation);
 
   const currentMessages = messages.filter(m =>
     m && m.conversation === currentConversation && m.id !== 'typing-ai-message'
   );
 
+  // --- NEW: Handle tab visibility changes ---
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden" && isTyping && fullAiResponseRef.current) {
+        // User switched tabs while typing - show full response immediately
+        if (typingIntervalRef.current) {
+          clearInterval(typingIntervalRef.current);
+          typingIntervalRef.current = null;
+        }
+        
+        setIsTyping(false);
+        setTypingMessageContent("");
+        
+        // Add the full AI message to chat - DON'T filter anything, just add the bot message
+        setChatData((prev) => {
+          // Check if this exact message already exists to avoid duplicates
+          const messageExists = prev.messages.some(
+            m => m.content === fullAiResponseRef.current && m.sender === 'bot' && m.conversation === prev.currentConversation
+          );
+          
+          if (!messageExists) {
+            return {
+              ...prev,
+              messages: [
+                ...prev.messages,
+                {
+                  id: `ai-${Date.now()}`,
+                  sender: 'bot',
+                  content: fullAiResponseRef.current,
+                  conversation: prev.currentConversation,
+                  timestamp: new Date().toISOString(),
+                }
+              ],
+            };
+          }
+          return prev;
+        });
+        
+        // Clear refs
+        fullAiResponseRef.current = "";
+        currentIndexRef.current = 0;
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isTyping, setChatData]);
+
+  // --- Scroll to bottom when new messages appear ---
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentMessages, typingMessageContent]);
 
+  // --- Sidebar toggle logic ---
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (
@@ -75,7 +140,7 @@ const ChatbotPage = () => {
     };
   }, [sidebarOpen]);
 
-  // Auto focus input
+  // --- Auto focus input ---
   useEffect(() => {
     inputRef.current?.focus();
   }, [currentConversation, showWelcomePage]);
@@ -95,16 +160,17 @@ const ChatbotPage = () => {
     return cookieValue;
   };
 
+  // --- Send message (main logic) ---
   const handleSend = async (messageContentToSend = inputValue.trim()) => {
     if (!messageContentToSend) return;
-
     setInputValue("");
 
+    // For new conversation
     if (chatData.currentConversation === "new" || !chatData.currentConversation) {
       try {
         setTypingMessageContent("");
         setIsTyping(true);
-        
+
         const response = await fetch("http://127.0.0.1:8000/api/chat/", {
           method: "POST",
           headers: {
@@ -118,9 +184,7 @@ const ChatbotPage = () => {
           }),
         });
 
-        if (!response.ok) {
-          throw new Error("Failed to create conversation");
-        }
+        if (!response.ok) throw new Error("Failed to create conversation");
 
         const data = await response.json();
         const { conversation_id, user_message, ai_response } = data;
@@ -137,26 +201,37 @@ const ChatbotPage = () => {
           currentConversation: conversation_id,
           messages: prev.messages.concat([user_message]),
         }));
-        
-        const fullAiResponseContent = ai_response.content;
-        let i = 0;
-        const typingSpeed = 0.5;
 
         triggerSidebarUpdate();
 
-        const typingInterval = setInterval(() => {
-          if (i < fullAiResponseContent.length) {
-            setTypingMessageContent(fullAiResponseContent.substring(0, i + 20));
-            i++;
+        const fullAiResponseContent = ai_response.content;
+        fullAiResponseRef.current = fullAiResponseContent;
+        currentIndexRef.current = 0;
+        
+        const typingSpeed = 0.5;
+
+        // Clear any existing interval
+        if (typingIntervalRef.current) {
+          clearInterval(typingIntervalRef.current);
+        }
+
+        typingIntervalRef.current = setInterval(() => {
+          if (currentIndexRef.current < fullAiResponseContent.length) {
+            setTypingMessageContent(fullAiResponseContent.substring(0, currentIndexRef.current + 20));
+            currentIndexRef.current += 20;
           } else {
-            clearInterval(typingInterval);
+            clearInterval(typingIntervalRef.current);
+            typingIntervalRef.current = null;
             setIsTyping(false);
             setTypingMessageContent("");
-
             setChatData((prev) => ({
               ...prev,
-              messages: prev.messages.concat([{ ...ai_response, content: fullAiResponseContent }]),
+              messages: prev.messages.concat([
+                { ...ai_response, content: fullAiResponseContent },
+              ]),
             }));
+            fullAiResponseRef.current = "";
+            currentIndexRef.current = 0;
           }
         }, typingSpeed);
 
@@ -166,13 +241,26 @@ const ChatbotPage = () => {
         console.error("Error creating conversation:", error);
         setIsTyping(false);
         setTypingMessageContent("");
+        fullAiResponseRef.current = "";
+        currentIndexRef.current = 0;
         return;
       }
     }
 
+    // Existing conversation
     await sendMessage(messageContentToSend);
   };
 
+  // --- Cleanup on unmount ---
+  useEffect(() => {
+    return () => {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // --- Handle Enter to send ---
   const handleKeyPress = (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -183,13 +271,14 @@ const ChatbotPage = () => {
   const handleFirstMessageSend = useCallback(async (messageContent) => {
     setTransitioning(true);
     await handleSend(messageContent);
-    
+
     setTimeout(() => {
       setShowWelcomePage(false);
       setTransitioning(false);
     }, 700);
   }, [chatData, setChatData, sendMessage, handleSend]);
 
+  // --- Welcome page transition logic ---
   useEffect(() => {
     const shouldShow = currentConversation === "new" || (!currentConversation && messages.length === 0);
     if (showWelcomePage !== shouldShow) {
@@ -205,7 +294,7 @@ const ChatbotPage = () => {
     }
   }, [currentConversation, messages, showWelcomePage]);
 
-
+  // --- Delete conversation modal logic ---
   const openConfirmModal = useCallback((convId) => {
     setConversationToDeleteId(convId);
     setShowConfirmModal(true);
@@ -222,19 +311,17 @@ const ChatbotPage = () => {
     try {
       const response = await fetch(
         `http://127.0.0.1:8000/api/conversations/${conversationToDeleteId}/`,
-        { 
+        {
           method: 'DELETE',
-          headers: { 
-            'X-CSRFToken': getCookie('csrftoken'), 
-            'Content-Type': 'application/json' 
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json'
           },
           credentials: 'include'
         }
       );
-      
-      if (!response.ok) {
-        throw new Error("Failed to delete conversation");
-      }
+
+      if (!response.ok) throw new Error("Failed to delete conversation");
 
       setChatData((prev) => {
         const updatedConversations = prev.conversations.filter(
@@ -247,15 +334,15 @@ const ChatbotPage = () => {
           messages: [],
         };
       });
-      setShowWelcomePage(true); 
+      setShowWelcomePage(true);
       closeConfirmModal();
-      console.log("Conversation deleted successfully and returned to welcome page.");
     } catch (err) {
       console.error("Error deleting conversation:", err);
       closeConfirmModal();
     }
   }, [conversationToDeleteId, setChatData, closeConfirmModal]);
 
+  // --- Logout ---
   const handleLogout = async () => {
     try {
       await axios.post('http://127.0.0.1:8000/api/logout/', {}, { withCredentials: true });
@@ -291,13 +378,6 @@ const ChatbotPage = () => {
           className="position-fixed top-0 start-0 w-100 h-100"
           style={{ backgroundColor: "rgba(0, 0, 0, 0.5)", zIndex: 999 }}
           onClick={() => setSidebarOpen(false)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              setSidebarOpen(false);
-            }
-          }}
         />
       )}
 
@@ -311,17 +391,11 @@ const ChatbotPage = () => {
           size="2xl"
           ref={toggleButtonRef}
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              setSidebarOpen(!sidebarOpen);
-            }
-          }}
         />
         <h1 className="fs-3 text-center flex-grow-1 m-0">
           {currentConv?.title || "Software Design Sensei"}
         </h1>
         <div style={{ width: "24px" }} />
-        {/* Logout Button */}
         <button className="btn btn-outline-danger" onClick={handleLogout}>
           <FontAwesomeIcon icon={faSignOutAlt} className="me-2" />
           Logout
@@ -349,11 +423,11 @@ const ChatbotPage = () => {
                 <div
                   key={msg.id}
                   className={`px-3 py-2 rounded fs-5 message-fade-in ${
-                    msg.sender === "AI Chatbot"
+                    msg.sender === "bot"
                       ? "bg-white align-self-start"
                       : "bg-blue-light text-black align-self-end"
                   }`}
-                  style={{ maxWidth: msg.sender === "AI Chatbot" ? "100%" : "80%" }}
+                  style={{ maxWidth: msg.sender === "bot" ? "100%" : "80%" }}
                 >
                   <p className="mb-0">{msg.content}</p>
                 </div>
@@ -363,7 +437,10 @@ const ChatbotPage = () => {
                   className="px-3 py-2 rounded fs-5 bg-white align-self-start message-fade-in"
                   style={{ maxWidth: "100%" }}
                 >
-                  <p className="mb-0">{typingMessageContent}<span className="typing-cursor">|</span></p>
+                  <p className="mb-0">
+                    {typingMessageContent}
+                    <span className="typing-cursor">|</span>
+                  </p>
                 </div>
               )}
               <div ref={messagesEndRef} />
@@ -372,7 +449,6 @@ const ChatbotPage = () => {
         )}
       </div>
 
-      {/* Confirmation Modal - Rendered outside the main content flow */}
       <DeleteConfirmationModal
         show={showConfirmModal}
         onConfirm={handleDeleteConversationConfirmed}
@@ -380,12 +456,7 @@ const ChatbotPage = () => {
       />
 
       {/* Chat Input */}
-      <div
-        style={{
-          padding: "1.5rem 2rem",
-          backgroundColor: "#ffffff",
-        }}
-      >
+      <div style={{ padding: "1.5rem 2rem", backgroundColor: "#ffffff" }}>
         <div
           style={{
             display: "flex",
@@ -401,7 +472,7 @@ const ChatbotPage = () => {
               position: "relative",
               backgroundColor: "#f8fafc",
               borderRadius: "1.5rem",
-              border: "1px solidrgb(179, 186, 194)",
+              border: "1px solid rgb(179, 186, 194)",
               transition: "all 0.2s ease",
             }}
           >
@@ -423,12 +494,12 @@ const ChatbotPage = () => {
                 color: "#334155",
               }}
               onFocus={(e) => {
-                e.target.parentElement.style.borderColor = "#000000"
-                e.target.parentElement.style.boxShadow = "0 0 0 3px #3b82f6"
+                e.target.parentElement.style.borderColor = "#000000";
+                e.target.parentElement.style.boxShadow = "0 0 0 3px #3b82f6";
               }}
               onBlur={(e) => {
-                e.target.parentElement.style.borderColor = "#e2e8f0"
-                e.target.parentElement.style.boxShadow = "none"
+                e.target.parentElement.style.borderColor = "#e2e8f0";
+                e.target.parentElement.style.boxShadow = "none";
               }}
             />
           </div>
@@ -451,12 +522,12 @@ const ChatbotPage = () => {
             disabled={!inputValue.trim()}
             onMouseEnter={(e) => {
               if (inputValue.trim()) {
-                e.target.style.transform = "scale(1.05)"
+                e.target.style.transform = "scale(1.05)";
               }
             }}
             onMouseLeave={(e) => {
               if (inputValue.trim()) {
-                e.target.style.transform = "scale(1)"
+                e.target.style.transform = "scale(1)";
               }
             }}
           >

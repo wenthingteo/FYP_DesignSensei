@@ -1,6 +1,14 @@
 import axios from "axios";
 
-const useSendMessage = (chatData, setChatData, setTypingMessageContent, setIsTyping) => {
+const useSendMessage = (
+  chatData, 
+  setChatData, 
+  setTypingMessageContent, 
+  setIsTyping,
+  fullAiResponseRef,
+  typingIntervalRef,
+  currentIndexRef
+) => {
   return async (content) => {
     const userTempMessage = {
       id: `temp-user-${Date.now()}`,
@@ -34,13 +42,23 @@ const useSendMessage = (chatData, setChatData, setTypingMessageContent, setIsTyp
 
       // Simulate typing effect for AI response
       const fullAiResponseContent = ai_response.content;
-      let i = 0;
-      const typingInterval = setInterval(() => {
-        if (i < fullAiResponseContent.length) {
-          setTypingMessageContent(fullAiResponseContent.substring(0, i + 1));
-          i++;
+      
+      // Store full response in ref for tab switching recovery
+      fullAiResponseRef.current = fullAiResponseContent;
+      currentIndexRef.current = 0;
+
+      // Clear any existing interval
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+      }
+
+      typingIntervalRef.current = setInterval(() => {
+        if (currentIndexRef.current < fullAiResponseContent.length) {
+          setTypingMessageContent(fullAiResponseContent.substring(0, currentIndexRef.current + 20));
+          currentIndexRef.current += 20;
         } else {
-          clearInterval(typingInterval);
+          clearInterval(typingIntervalRef.current);
+          typingIntervalRef.current = null;
           setIsTyping(false);
           setTypingMessageContent(""); // Clear typing content after full message is displayed
 
@@ -63,13 +81,26 @@ const useSendMessage = (chatData, setChatData, setTypingMessageContent, setIsTyp
               messages: filteredMessages.concat(messagesToAdd),
             };
           });
+
+          // Clear refs after completion
+          fullAiResponseRef.current = "";
+          currentIndexRef.current = 0;
         }
-      }, 20); // Adjust typing speed (milliseconds per character)
+      }, 0.5); // Adjust typing speed to match ChatbotPage (0.5ms)
 
     } catch (err) {
       console.error("Failed to send message or get bot response", err);
       setIsTyping(false); // Stop typing on error
       setTypingMessageContent(""); // Clear typing content on error
+      
+      // Clear refs on error
+      fullAiResponseRef.current = "";
+      currentIndexRef.current = 0;
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+        typingIntervalRef.current = null;
+      }
+      
       setChatData((prev) => ({
         ...prev,
         messages: prev.messages.filter((msg) =>
