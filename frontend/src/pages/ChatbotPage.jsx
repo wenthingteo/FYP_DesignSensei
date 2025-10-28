@@ -12,6 +12,8 @@ import useSendMessage from "../hooks/useSendMessage";
 import useSidebarUpdates from '../hooks/useSidebarUpdates';
 import './ChatbotPage.css';
 import DeleteConfirmationModal from "../components/DeleteConfirmationModal";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const ChatbotPage = () => {
   const navigate = useNavigate();
@@ -429,7 +431,11 @@ const ChatbotPage = () => {
                   }`}
                   style={{ maxWidth: msg.sender === "bot" ? "100%" : "80%" }}
                 >
-                  <p className="mb-0">{msg.content}</p>
+                  <div className="markdown-content mb-0">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               ))}
               {isTyping && typingMessageContent && (
