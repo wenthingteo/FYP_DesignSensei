@@ -15,12 +15,15 @@ from pathlib import Path
 import dj_database_url
 from decouple import config
 import logging
+from dotenv import load_dotenv
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
+logger = logging.getLogger(__name__)
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -129,8 +132,13 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 if DATABASE_URL:
     DATABASES = {
-        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+        'default': dj_database_url.config(
+            default=os.getenv('DATABASE_URL'),
+            conn_max_age=600,
+            ssl_require=True
+        )
     }
+    print("Using PostgreSQL database from Render")
 else:
     # fallback to sqlite
     DATABASES = {
@@ -139,6 +147,7 @@ else:
             'NAME': BASE_DIR / 'db.sqlite3',
         }
     }
+    print("Using local SQLite database")
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

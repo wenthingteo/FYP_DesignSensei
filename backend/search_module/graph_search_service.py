@@ -473,8 +473,8 @@ class GraphSearchService:
             if raw_result:
                 sample = raw_result[0]
                 node = sample.get('n')
-                print(f"   Sample record: {sample}")
-                print(f"   Node type: {type(node)}")
+                # print(f"   Sample record: {sample}")
+                # print(f"   Node type: {type(node)}")
                 if hasattr(node, 'labels'):
                     print(f"   Node labels: {list(node.labels)}")
                 if hasattr(node, 'keys'):
