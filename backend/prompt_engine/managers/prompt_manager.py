@@ -45,6 +45,8 @@ class PromptManager:
         # Step 1: Classify intent
         intent_result = self.intent_classifier.classify_intent(user_query, graphrag_results)
         intent_type = intent_result['question_type'] # Get the string value of the intent
+        if intent_type == "unknown":
+            intent_type = QuestionType.OUT_OF_SCOPE_GENERAL.value
 
         llm_prompt = ""
         system_role = ""
