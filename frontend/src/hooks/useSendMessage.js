@@ -7,7 +7,10 @@ const useSendMessage = (
   setIsTyping,
   fullAiResponseRef,
   typingIntervalRef,
-  currentIndexRef
+  currentIndexRef,
+  timeoutTimerRef,
+  setIsTimeout,
+  setTimeoutMessage
 ) => {
   return async (content) => {
     const userTempMessage = {
@@ -25,6 +28,31 @@ const useSendMessage = (
     // Add a placeholder for the AI's typing message
     setIsTyping(true);
     setTypingMessageContent(""); // Clear previous typing content
+
+    // --- Timeout logic for existing conversations ---
+    setIsTimeout(false);
+    setTimeoutMessage("");
+    
+    const clearAllTimers = () => {
+      if (timeoutTimerRef.current) {
+        clearTimeout(timeoutTimerRef.current);
+        timeoutTimerRef.current = null;
+      }
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+        typingIntervalRef.current = null;
+      }
+    };
+
+    timeoutTimerRef.current = setTimeout(() => {
+      setIsTimeout(true);
+      setTimeoutMessage("⚠️ The response is taking longer than expected. This could be due to network issues or server load.");
+      setIsTyping(false);
+      setTypingMessageContent("");
+      fullAiResponseRef.current = "";
+      currentIndexRef.current = 0;
+      clearAllTimers();
+    }, 30000); // 30 seconds timeout
 
     try {
       const res = await axios.post("http://127.0.0.1:8000/api/chat/", {
@@ -57,8 +85,7 @@ const useSendMessage = (
           setTypingMessageContent(fullAiResponseContent.substring(0, currentIndexRef.current + 20));
           currentIndexRef.current += 20;
         } else {
-          clearInterval(typingIntervalRef.current);
-          typingIntervalRef.current = null;
+          clearAllTimers();
           setIsTyping(false);
           setTypingMessageContent(""); // Clear typing content after full message is displayed
 
@@ -90,16 +117,17 @@ const useSendMessage = (
 
     } catch (err) {
       console.error("Failed to send message or get bot response", err);
+      
+      // Show timeout/error message
+      setIsTimeout(true);
+      setTimeoutMessage("❌ Failed to get response. Please check your connection and try again.");
       setIsTyping(false); // Stop typing on error
       setTypingMessageContent(""); // Clear typing content on error
       
       // Clear refs on error
       fullAiResponseRef.current = "";
       currentIndexRef.current = 0;
-      if (typingIntervalRef.current) {
-        clearInterval(typingIntervalRef.current);
-        typingIntervalRef.current = null;
-      }
+      clearAllTimers();
       
       setChatData((prev) => ({
         ...prev,

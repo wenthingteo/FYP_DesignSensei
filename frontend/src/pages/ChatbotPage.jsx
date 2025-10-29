@@ -30,11 +30,14 @@ const ChatbotPage = () => {
 
   const [typingMessageContent, setTypingMessageContent] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [isTimeout, setIsTimeout] = useState(false);
+  const [timeoutMessage, setTimeoutMessage] = useState("");
   
   // NEW: Store full AI response for tab switching recovery
   const fullAiResponseRef = useRef("");
   const typingIntervalRef = useRef(null);
   const currentIndexRef = useRef(0);
+  const timeoutTimerRef = useRef(null);
 
   const [showWelcomePage, setShowWelcomePage] = useState(
     currentConversation === "new" || (!currentConversation && messages.length === 0)
@@ -51,7 +54,10 @@ const ChatbotPage = () => {
     setIsTyping,
     fullAiResponseRef,
     typingIntervalRef,
-    currentIndexRef
+    currentIndexRef,
+    timeoutTimerRef,
+    setIsTimeout,
+    setTimeoutMessage
   );
   const currentConv = conversations.find(c => c.id === currentConversation);
 
@@ -59,15 +65,24 @@ const ChatbotPage = () => {
     m && m.conversation === currentConversation && m.id !== 'typing-ai-message'
   );
 
+  // Helper function to clear all timers
+  const clearAllTimers = useCallback(() => {
+    if (timeoutTimerRef.current) {
+      clearTimeout(timeoutTimerRef.current);
+      timeoutTimerRef.current = null;
+    }
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+  }, []);
+
   // --- NEW: Handle tab visibility changes ---
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden" && isTyping && fullAiResponseRef.current) {
         // User switched tabs while typing - show full response immediately
-        if (typingIntervalRef.current) {
-          clearInterval(typingIntervalRef.current);
-          typingIntervalRef.current = null;
-        }
+        clearAllTimers();
         
         setIsTyping(false);
         setTypingMessageContent("");
@@ -108,7 +123,7 @@ const ChatbotPage = () => {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [isTyping, setChatData]);
+  }, [isTyping, setChatData, clearAllTimers]);
 
   // --- Scroll to bottom when new messages appear ---
   useEffect(() => {
@@ -173,6 +188,19 @@ const ChatbotPage = () => {
         setTypingMessageContent("");
         setIsTyping(true);
 
+        // --- Timeout logic ---
+        setIsTimeout(false);
+        setTimeoutMessage("");
+        timeoutTimerRef.current = setTimeout(() => {
+          setIsTimeout(true);
+          setTimeoutMessage("The response is taking longer than expected. This could be due to network issues or server load.");
+          setIsTyping(false);
+          setTypingMessageContent("");
+          fullAiResponseRef.current = "";
+          currentIndexRef.current = 0;
+          clearAllTimers();
+        }, 10000); // 60 seconds timeout
+
         const response = await fetch("http://127.0.0.1:8000/api/chat/", {
           method: "POST",
           headers: {
@@ -222,8 +250,7 @@ const ChatbotPage = () => {
             setTypingMessageContent(fullAiResponseContent.substring(0, currentIndexRef.current + 20));
             currentIndexRef.current += 20;
           } else {
-            clearInterval(typingIntervalRef.current);
-            typingIntervalRef.current = null;
+            clearAllTimers();
             setIsTyping(false);
             setTypingMessageContent("");
             setChatData((prev) => ({
@@ -245,6 +272,7 @@ const ChatbotPage = () => {
         setTypingMessageContent("");
         fullAiResponseRef.current = "";
         currentIndexRef.current = 0;
+        clearAllTimers();
         return;
       }
     }
@@ -256,11 +284,9 @@ const ChatbotPage = () => {
   // --- Cleanup on unmount ---
   useEffect(() => {
     return () => {
-      if (typingIntervalRef.current) {
-        clearInterval(typingIntervalRef.current);
-      }
+      clearAllTimers();
     };
-  }, []);
+  }, [clearAllTimers]);
 
   // --- Handle Enter to send ---
   const handleKeyPress = (e) => {
@@ -431,22 +457,61 @@ const ChatbotPage = () => {
                   }`}
                   style={{ maxWidth: msg.sender === "bot" ? "100%" : "80%" }}
                 >
-                  <div className="markdown-content mb-0">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {msg.content}
-                    </ReactMarkdown>
-                  </div>
+                  {msg.sender === "bot" ? (
+                    <div className="markdown-content mb-0">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
+                  ) : (
+                    <p className="mb-0 user-text">{msg.content}</p>
+                  )}
                 </div>
               ))}
-              {isTyping && typingMessageContent && (
+              {isTimeout && (
+                <div>
+                  <p className="mb-2 text-dark fw-semibold fs-5">
+                    {timeoutMessage || "This is taking longer than usual."}
+                  </p>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => {
+                      // Only reset the timeout state — do not resend the message
+                      setIsTimeout(false);
+                      setTimeoutMessage("");
+                    }}
+                  >
+                    Regenerate Response
+                  </button>
+                </div>
+              )}  
+              {isTyping && (
                 <div
-                  className="px-3 py-2 rounded fs-5 bg-white align-self-start message-fade-in"
+                  className="px-3 py-2 rounded fs-5 bg-white align-self-start message-fade-in d-flex align-items-center gap-2"
                   style={{ maxWidth: "100%" }}
                 >
-                  <p className="mb-0">
-                    {typingMessageContent}
-                    <span className="typing-cursor">|</span>
-                  </p>
+                  {/* Bootstrap spinner - only show when no content yet */}
+                  {!typingMessageContent && (
+                    <div
+                      className="spinner-border text-primary"
+                      role="status"
+                      style={{ width: "1.2rem", height: "1.2rem" }}
+                    >
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                  )}
+
+                  {typingMessageContent && (
+                    <p className="mb-0">
+                      {typingMessageContent}
+                      <span className="typing-cursor">|</span>
+                    </p>
+                  )}
+                  
+                  {/* Show spinner with content for better UX */}
+                  {!typingMessageContent && (
+                    <span className="text-muted">Thinking...</span>
+                  )}
                 </div>
               )}
               <div ref={messagesEndRef} />
