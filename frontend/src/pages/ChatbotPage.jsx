@@ -55,9 +55,9 @@ const ChatbotPage = () => {
     fullAiResponseRef,
     typingIntervalRef,
     currentIndexRef,
-    timeoutTimerRef,
-    setIsTimeout,
-    setTimeoutMessage
+    // timeoutTimerRef,
+    // setIsTimeout,
+    // setTimeoutMessage
   );
   const currentConv = conversations.find(c => c.id === currentConversation);
 
@@ -199,7 +199,7 @@ const ChatbotPage = () => {
           fullAiResponseRef.current = "";
           currentIndexRef.current = 0;
           clearAllTimers();
-        }, 10000); // 60 seconds timeout
+        }, 60000); // 60 seconds timeout
 
         const response = await fetch("http://127.0.0.1:8000/api/chat/", {
           method: "POST",
