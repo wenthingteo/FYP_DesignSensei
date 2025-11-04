@@ -2,7 +2,7 @@ import React, { useContext, useState, useRef, useEffect, useCallback } from "rea
 import { useNavigate } from 'react-router-dom';
 import axios from "axios";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBars, faPaperPlane, faSignOutAlt } from '@fortawesome/free-solid-svg-icons';
+import { faBars, faPaperPlane, faSignOutAlt, faRotate } from '@fortawesome/free-solid-svg-icons';
 import Lottie from "lottie-react";
 import robotAnimation from "../assets/robot_animation.json";
 import Sidebar from "../components/Sidebar";
@@ -32,6 +32,7 @@ const ChatbotPage = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [isTimeout, setIsTimeout] = useState(false);
   const [timeoutMessage, setTimeoutMessage] = useState("");
+  const [lastUserMessage, setLastUserMessage] = useState(null);
   
   // NEW: Store full AI response for tab switching recovery
   const fullAiResponseRef = useRef("");
@@ -55,10 +56,12 @@ const ChatbotPage = () => {
     fullAiResponseRef,
     typingIntervalRef,
     currentIndexRef,
-    // timeoutTimerRef,
-    // setIsTimeout,
-    // setTimeoutMessage
+    timeoutTimerRef,
+    setIsTimeout,
+    setTimeoutMessage,
+    setLastUserMessage
   );
+
   const currentConv = conversations.find(c => c.id === currentConversation);
 
   const currentMessages = messages.filter(m =>
@@ -128,7 +131,7 @@ const ChatbotPage = () => {
   // --- Scroll to bottom when new messages appear ---
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentMessages, typingMessageContent]);
+  }, [currentMessages, typingMessageContent, isTimeout]);
 
   // --- Sidebar toggle logic ---
   useEffect(() => {
@@ -177,10 +180,29 @@ const ChatbotPage = () => {
     return cookieValue;
   };
 
+  // --- Regenerate response function ---
+  const handleRegenerateResponse = useCallback(async () => {
+    if (!lastUserMessage) return;
+
+    // Reset timeout state
+    setIsTimeout(false);
+    setTimeoutMessage("");
+
+    // Resend the last message
+    if (currentConversation === "new" || !currentConversation) {
+      await handleSend(lastUserMessage);
+    } else {
+      await sendMessage(lastUserMessage);
+    }
+  }, [lastUserMessage, currentConversation, sendMessage]);
+
   // --- Send message (main logic) ---
   const handleSend = async (messageContentToSend = inputValue.trim()) => {
     if (!messageContentToSend) return;
     setInputValue("");
+
+    // Store message for potential regeneration
+    setLastUserMessage(messageContentToSend);
 
     // For new conversation
     if (chatData.currentConversation === "new" || !chatData.currentConversation) {
@@ -193,7 +215,7 @@ const ChatbotPage = () => {
         setTimeoutMessage("");
         timeoutTimerRef.current = setTimeout(() => {
           setIsTimeout(true);
-          setTimeoutMessage("The response is taking longer than expected. This could be due to network issues or server load.");
+          setTimeoutMessage("⏱️ The response is taking longer than expected. This could be due to network issues or server load.");
           setIsTyping(false);
           setTypingMessageContent("");
           fullAiResponseRef.current = "";
@@ -213,6 +235,23 @@ const ChatbotPage = () => {
             conversation: null,
           }),
         });
+
+        // Clear timeout on response
+        clearTimeout(timeoutTimerRef.current);
+        timeoutTimerRef.current = null;
+
+        // Check for timeout response from backend
+        if (response.status === 408) {
+          const errorData = await response.json();
+          setIsTimeout(true);
+          setTimeoutMessage(errorData.message || "⏱️ Response generation timed out on the server. Please try regenerating.");
+          setIsTyping(false);
+          setTypingMessageContent("");
+          fullAiResponseRef.current = "";
+          currentIndexRef.current = 0;
+          clearAllTimers();
+          return;
+        }
 
         if (!response.ok) throw new Error("Failed to create conversation");
 
@@ -261,6 +300,7 @@ const ChatbotPage = () => {
             }));
             fullAiResponseRef.current = "";
             currentIndexRef.current = 0;
+            setLastUserMessage(null); // Clear after successful response
           }
         }, typingSpeed);
 
@@ -268,11 +308,13 @@ const ChatbotPage = () => {
         return;
       } catch (error) {
         console.error("Error creating conversation:", error);
+        clearAllTimers();
+        setIsTimeout(true);
+        setTimeoutMessage("❌ Failed to create conversation. Please try again.");
         setIsTyping(false);
         setTypingMessageContent("");
         fullAiResponseRef.current = "";
         currentIndexRef.current = 0;
-        clearAllTimers();
         return;
       }
     }
@@ -469,18 +511,20 @@ const ChatbotPage = () => {
                 </div>
               ))}
               {isTimeout && (
-                <div>
-                  <p className="mb-2 text-dark fw-semibold fs-5">
-                    {timeoutMessage || "This is taking longer than usual."}
-                  </p>
+                <div className="d-flex flex-column gap-2 align-items-start">
+                  <div className="alert alert-warning d-flex align-items-center gap-2 mb-0" role="alert">
+                    <span>⏱️</span>
+                    <div>
+                      <strong>Timeout</strong>
+                      <p className="mb-0">{timeoutMessage || "Response generation took too long."}</p>
+                    </div>
+                  </div>
                   <button
-                    className="btn btn-danger"
-                    onClick={() => {
-                      // Only reset the timeout state — do not resend the message
-                      setIsTimeout(false);
-                      setTimeoutMessage("");
-                    }}
+                    className="btn btn-primary d-flex align-items-center gap-2"
+                    onClick={handleRegenerateResponse}
+                    disabled={!lastUserMessage}
                   >
+                    <FontAwesomeIcon icon={faRotate} />
                     Regenerate Response
                   </button>
                 </div>
@@ -502,10 +546,12 @@ const ChatbotPage = () => {
                   )}
 
                   {typingMessageContent && (
-                    <p className="mb-0">
-                      {typingMessageContent}
+                    <div className="markdown-content mb-0">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {typingMessageContent}
+                      </ReactMarkdown>
                       <span className="typing-cursor">|</span>
-                    </p>
+                    </div>
                   )}
                   
                   {/* Show spinner with content for better UX */}
@@ -554,6 +600,7 @@ const ChatbotPage = () => {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyPress}
+              disabled={isTyping}
               style={{
                 width: "100%",
                 padding: "1.125rem 1.5rem",
@@ -581,23 +628,23 @@ const ChatbotPage = () => {
               borderRadius: "50%",
               border: "none",
               color: "white",
-              cursor: inputValue.trim() ? "pointer" : "not-allowed",
+              cursor: inputValue.trim() && !isTyping ? "pointer" : "not-allowed",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               transition: "all 0.2s ease",
-              boxShadow: inputValue.trim() ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none",
+              boxShadow: inputValue.trim() && !isTyping ? "0 4px 12px rgba(59, 130, 246, 0.3)" : "none",
             }}
-            className={inputValue.trim() ? "bg-blue-dark" : ""}
+            className={inputValue.trim() && !isTyping ? "bg-blue-dark" : ""}
             onClick={handleSend}
-            disabled={!inputValue.trim()}
+            disabled={!inputValue.trim() || isTyping}
             onMouseEnter={(e) => {
-              if (inputValue.trim()) {
+              if (inputValue.trim() && !isTyping) {
                 e.target.style.transform = "scale(1.05)";
               }
             }}
             onMouseLeave={(e) => {
-              if (inputValue.trim()) {
+              if (inputValue.trim() && !isTyping) {
                 e.target.style.transform = "scale(1)";
               }
             }}

@@ -6,7 +6,6 @@ function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
   const navigate = useNavigate();
   const { fetchChats } = useContext(ChatContext);
 
@@ -135,13 +134,6 @@ function LoginPage() {
       justifyContent: "space-between",
       alignItems: "center",
       // marginBottom: "1.05rem",
-    },
-    rememberMe: {
-      display: "flex",
-      alignItems: "center",
-      cursor: "pointer",
-      fontSize: "1.05rem",
-      color: "#374151",
     },
     checkbox: {
       marginRight: "0.625rem",
