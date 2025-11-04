@@ -45,3 +45,36 @@ class Feedback(models.Model):
 
 #     def __str__(self):
 #         return f'{self.user.username}: {self.message}'
+
+#  kerry evaluation part
+class EvaluationResult(models.Model):
+    session_id = models.CharField(max_length=255)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    question = models.TextField()
+    context = models.TextField(null=True, blank=True)
+    llm_answer = models.TextField()
+    ground_truth = models.TextField(null=True, blank=True)
+    relevance_score = models.FloatField(null=True, blank=True)
+    bert_score = models.FloatField(null=True, blank=True)
+    llm_rubric_score = models.FloatField(null=True, blank=True)
+    combined_score = models.FloatField(null=True, blank=True)
+    passed = models.BooleanField(default=False)
+    evaluation_timestamp = models.DateTimeField(default=timezone.now)
+    evaluation_details = models.JSONField(default=dict, blank=True)
+    action_taken = models.CharField(max_length=50, default="none")
+
+    def __str__(self):
+        return f"Evaluation for session {self.session_id} - {self.question[:40]}"
+
+
+class GroundTruth(models.Model):
+    question = models.TextField()
+    context = models.TextField(null=True, blank=True)
+    ground_truth = models.TextField()
+    created_by = models.CharField(max_length=255, null=True, blank=True)
+    verified = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=timezone.now)
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Ground Truth: {self.question[:40]}"
