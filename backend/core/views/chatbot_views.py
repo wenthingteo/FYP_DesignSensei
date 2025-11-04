@@ -5,6 +5,8 @@ from rest_framework import status
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 import logging
+import asyncio
+from asgiref.sync import sync_to_async
 
 from core.models import Conversation, Message
 from core.serializers import MessageSerializer, ConversationSerializer
@@ -18,6 +20,9 @@ from prompt_engine.templates.base_template import UserExpertise, ResponseLength
 # Import GraphRAG integration components
 from knowledge_graph.connection.neo4j_client import Neo4jClient
 from search_module.graph_search_service import GraphSearchService
+
+# Import Evaluation Service
+from evaluation.evaluation_service import EvaluationService
 
 # Configure logging for this view
 logger = logging.getLogger(__name__)
@@ -45,13 +50,55 @@ class ChatbotAPIView(APIView):
         You can improve this logic later (e.g. by calling OpenAI).
         """
         try:
-            # Example: just take first 8–10 words or 50 chars
+            # Example: just take first 8-10 words or 50 chars
             words = message_text.split()
             title = " ".join(words[:10]) if len(words) > 10 else message_text
             return title[:50]
         except Exception as e:
             logger.error(f"Error generating title: {e}")
             return "New Conversation"
+
+    async def _process_message_async(self, message_text, session_id, conversation_context):
+        """
+        Async wrapper for the LLM processing with timeout
+        """
+        try:
+            # Intent classification & Graph Search
+            initial_intent_result = self.prompt_manager.intent_classifier.classify_intent(user_query=message_text)
+            search_parameters = self.prompt_manager.intent_classifier.get_search_parameters(
+                user_query=message_text,
+                intent_result=initial_intent_result
+            )
+
+            graphrag_results = {'results': []}
+            if self.graph_search_service:
+                logger.info(f"ChatbotAPIView: Calling GraphSearchService for '{message_text}' with params: {search_parameters}")
+                graphrag_results = self.graph_search_service.search(
+                    user_query_text=message_text,
+                    search_params=search_parameters,
+                    session_id=session_id
+                )
+                logger.info(f"ChatbotAPIView: Received {len(graphrag_results.get('results', []))} results from GraphSearchService.")
+            else:
+                logger.warning("ChatbotAPIView: GraphSearchService not available. Proceeding without GraphRAG results.")
+
+            # Process query and generate response
+            user_expertise = UserExpertise.INTERMEDIATE
+            response_length = ResponseLength.MEDIUM
+
+            processed_result = self.prompt_manager.process_query(
+                user_query=message_text,
+                graphrag_results=graphrag_results,
+                conversation_context=conversation_context,
+                user_expertise=user_expertise,
+                response_length=response_length
+            )
+            
+            return processed_result, graphrag_results
+
+        except Exception as e:
+            logger.error(f"ChatbotAPIView: Error during async processing: {e}", exc_info=True)
+            raise
 
     def post(self, request):
         """Send message (and trigger AI response)"""
@@ -99,42 +146,41 @@ class ChatbotAPIView(APIView):
         )
 
         conversation_context = self.context_manager.get_context(session_id)
-        graphrag_results = {'results': []}
 
-        # --- Intent classification & Graph Search ---
+        # --- Process with timeout ---
         try:
-            initial_intent_result = self.prompt_manager.intent_classifier.classify_intent(user_query=message_text)
-            search_parameters = self.prompt_manager.intent_classifier.get_search_parameters(
-                user_query=message_text,
-                intent_result=initial_intent_result
-            )
-
-            if self.graph_search_service:
-                logger.info(f"ChatbotAPIView: Calling GraphSearchService for '{message_text}' with params: {search_parameters}")
-                graphrag_results = self.graph_search_service.search(
-                    user_query_text=message_text,
-                    search_params=search_parameters,
-                    session_id=session_id
+            # Set timeout to 50 seconds (frontend will timeout at 60s)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            processed_result, graphrag_results = loop.run_until_complete(
+                asyncio.wait_for(
+                    self._process_message_async(message_text, session_id, conversation_context),
+                    timeout=50.0
                 )
-                logger.info(f"ChatbotAPIView: Received {len(graphrag_results.get('results', []))} results from GraphSearchService.")
-            else:
-                logger.warning("ChatbotAPIView: GraphSearchService not available. Proceeding without GraphRAG results.")
+            )
+            loop.close()
+
+        except asyncio.TimeoutError:
+            logger.error(f"ChatbotAPIView: Request timed out for message: {message_text}")
+            # Don't save AI message to database on timeout
+            return Response({
+                'error': 'timeout',
+                'message': 'Response generation took too long. Please try again.',
+                'conversation_id': conversation.id,
+                'user_message': MessageSerializer(user_message).data,
+            }, status=status.HTTP_408_REQUEST_TIMEOUT)
+
         except Exception as e:
-            logger.error(f"ChatbotAPIView: Error during intent classification or graph search: {e}", exc_info=True)
-            graphrag_results = {'results': []}
+            logger.error(f"ChatbotAPIView: Error processing message: {e}", exc_info=True)
+            return Response({
+                'error': 'processing_error',
+                'message': 'An error occurred while processing your request.',
+                'conversation_id': conversation.id,
+                'user_message': MessageSerializer(user_message).data,
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # --- Process query and generate response ---
-        user_expertise = UserExpertise.INTERMEDIATE
-        response_length = ResponseLength.MEDIUM
-
-        processed_result = self.prompt_manager.process_query(
-            user_query=message_text,
-            graphrag_results=graphrag_results,
-            conversation_context=conversation_context,
-            user_expertise=user_expertise,
-            response_length=response_length
-        )
-
+        # --- Extract response ---
         ai_response_text = processed_result.get('response', "An error occurred generating response.")
         ai_response_metadata = {
             'intent': processed_result.get('metadata', {}).get('intent', {}),
@@ -147,6 +193,21 @@ class ChatbotAPIView(APIView):
         if not isinstance(ai_response_text, str):
             ai_response_text = str(ai_response_text)
             logger.warning(f"ChatbotAPIView: AI response was not a string. Converted to string: {ai_response_text[:100]}...")
+        
+        # Evaluation (async, don't wait)
+        try:
+            eval_service = EvaluationService()
+            current_user_id = request.user.id
+            context_text = str(graphrag_results.get('results', []))
+            eval_service.evaluate_and_store_async(
+                session_id=session_id, 
+                user_id=current_user_id, 
+                question=message_text, 
+                context=context_text, 
+                llm_answer=ai_response_text
+            )
+        except Exception as e:
+            logger.error(f"ChatbotAPIView: Evaluation service error: {e}", exc_info=True)
 
         # --- Save AI response message ---
         ai_message = Message.objects.create(
