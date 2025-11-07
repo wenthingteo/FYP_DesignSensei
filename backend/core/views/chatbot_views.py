@@ -181,7 +181,19 @@ class ChatbotAPIView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         # --- Extract response ---
-        ai_response_text = processed_result.get('response', "An error occurred generating response.")
+        draft_answer = processed_result.get('response', "An error occurred generating response.")
+
+        eval_service = EvaluationService()
+        final_answer, score, attempts = eval_service.evaluate_before_send(
+            question=message_text,
+            context=str(graphrag_results.get('results', [])),
+            draft_answer=draft_answer,
+            max_attempts=3,
+            threshold=0.7
+        )
+
+        ai_response_text = final_answer  # deliver only the validated one
+
         ai_response_metadata = {
             'intent': processed_result.get('metadata', {}).get('intent', {}),
             'response_params': processed_result.get('response_params', {}),

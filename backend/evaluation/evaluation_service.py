@@ -233,3 +233,34 @@ Produce a single improved answer. Keep it concise (max 250 words), and if you AR
         except Exception as e:
             logger.exception("Regeneration failed: %s", e)
             return previous_answer
+        
+    def evaluate_before_send(self, question, context, draft_answer, max_attempts=3, threshold=0.7):
+        """Evaluate and regenerate until reaching threshold or max_attempts."""
+        attempt = 0
+        final_answer = draft_answer
+        final_score = 0.0
+
+        ground_truth = self._lookup_ground_truth(question, context)
+        qtxt = question if not context else question + "\n\nContext:\n" + context
+
+        while attempt < max_attempts:
+            attempt += 1
+            relevance = compute_cosine(qtxt, final_answer)
+            bert = compute_bertscore([final_answer], [ground_truth]) if ground_truth else 0.0
+            rubric, rationale = call_llm_rubric(question, final_answer, ground_truth)
+
+            combined = (RELEVANCE_WEIGHT * relevance +
+                        RUBRIC_WEIGHT * rubric +
+                        BERT_WEIGHT * bert)
+
+            if combined >= threshold:
+                logger.info("Answer passed on attempt %d with score %.3f", attempt, combined)
+                return final_answer, combined, attempt
+
+            # regenerate if below threshold
+            logger.info("Attempt %d failed (%.3f), regenerating...", attempt, combined)
+            final_answer = self._regenerate_answer(question, context, final_answer)
+            final_score = combined
+
+        logger.warning("All %d attempts failed. Final score: %.3f", max_attempts, final_score)
+        return final_answer, final_score, attempt
