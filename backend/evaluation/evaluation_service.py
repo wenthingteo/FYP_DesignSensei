@@ -96,7 +96,7 @@ def call_llm_rubric(question: str, answer: str, ground_truth: Optional[str]=None
         )
     try:
         resp = openai.ChatCompletion.create(
-            model="gpt-4o-mini", # change to your model
+            model="gpt-4o-nano",
             messages=[
                 {"role":"system","content":system},
                 {"role":"user","content":prompt}
@@ -284,7 +284,7 @@ Previous answer: {previous_answer}
 Produce a single improved answer. Keep it concise (max 250 words), and if you ARE NOT SURE about facts say 'I might be mistaken' and suggest where to check."""
         try:
             resp = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
+                model="gpt-4o-nano",
                 messages=[{"role":"user","content":prompt}],
                 temperature=0.0,
                 max_tokens=400
