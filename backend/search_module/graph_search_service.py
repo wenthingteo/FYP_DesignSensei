@@ -675,7 +675,7 @@ class GraphSearchService:
         
         # Extract parameters
         topic_labels = search_params.get('topic_filter_labels', [])
-        concepts = search_params.get('extracted_concepts', [])
+        extracted_concepts = search_params.get('extracted_concepts', [])
         min_score = search_params.get('min_relevance_score', 0.5)
         
         # Build query
@@ -683,7 +683,7 @@ class GraphSearchService:
             user_query_text=user_query_text,
             query_embedding=query_embedding,
             topic_labels=topic_labels,
-            concepts=concepts
+            extracted_concepts=extracted_concepts
         )
         
         # Prepare parameters
@@ -694,8 +694,8 @@ class GraphSearchService:
         }
         
         # Add concept parameters
-        if concepts:
-            for i, concept in enumerate(concepts):
+        if extracted_concepts:
+            for i, concept in enumerate(extracted_concepts):
                 params[f'concept_{i}'] = concept
         
         # Execute query

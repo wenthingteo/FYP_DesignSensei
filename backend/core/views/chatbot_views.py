@@ -67,7 +67,7 @@ class ChatbotAPIView(APIView):
             initial_intent_result = self.prompt_manager.intent_classifier.classify_intent(user_query=message_text)
             search_parameters = self.prompt_manager.intent_classifier.get_search_parameters(
                 user_query=message_text,
-                intent_result=initial_intent_result
+                intent=initial_intent_result
             )
 
             graphrag_results = {'results': []}
