@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404
 import logging
 import asyncio
 from asgiref.sync import sync_to_async
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 from django.conf import settings
@@ -30,6 +30,7 @@ from evaluation.evaluation_service import EvaluationService
 
 # Configure logging for this view
 logger = logging.getLogger(__name__)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class ChatbotAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -68,7 +69,7 @@ class ChatbotAPIView(APIView):
         user_prompt = f"Generate a concise title for: {message_text}"
 
         try:
-            client = openai.OpenAI(api_key=api_key)
+            client = OpenAI(api_key=api_key)
             response = client.chat.completions.create(
                 model="gpt-4.1-nano-2025-04-14",
                 messages=[
@@ -125,7 +126,36 @@ class ChatbotAPIView(APIView):
             else:
                 logger.warning("ChatbotAPIView: GraphSearchService not available. Proceeding without GraphRAG results.")
 
-            # Process query and generate response
+            # --- Handle fallback: if graph returns nothing or too weak ---
+            graph_results_list = graphrag_results.get('results', [])
+            if not graph_results_list or len(graph_results_list) == 0:
+                logger.info("No relevant graph results — switching to general LLM response.")
+                general_prompt = (
+                    "You are DesignSensei, an AI assistant for software design students. "
+                    "If the user's question is not related to software design, respond naturally and helpfully like a friendly AI."
+                )
+
+                # ✅ Initialize OpenAI client directly (not through PromptManager)
+                from openai import OpenAI
+                import os
+                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+                fallback_response = client.chat.completions.create(
+                    model="gpt-4.1-nano-2025-04-14",
+                    messages=[
+                        {"role": "system", "content": general_prompt},
+                        {"role": "user", "content": message_text}
+                    ],
+                    max_tokens=300,
+                    temperature=0.7
+                )
+
+                answer = fallback_response.choices[0].message.content.strip()
+
+                logger.info("✅ Fallback mode triggered — returned general LLM response.")
+                return {"response": answer, "metadata": {"mode": "fallback"}}, graphrag_results
+
+            # --- Process query and generate response (normal GraphRAG mode) ---
             user_expertise = UserExpertise.INTERMEDIATE
             response_length = ResponseLength.MEDIUM
 
@@ -231,17 +261,33 @@ class ChatbotAPIView(APIView):
 
         # --- Extract response ---
         draft_answer = processed_result.get('response', "An error occurred generating response.")
+        context_text = str(graphrag_results.get('results', []))
 
+        # --- Evaluate BEFORE sending (auto-regenerates up to 3 times) ---
         eval_service = EvaluationService()
         final_answer, score, attempts = eval_service.evaluate_before_send(
             question=message_text,
-            context=str(graphrag_results.get('results', [])),
+            context=context_text,
             draft_answer=draft_answer,
             max_attempts=3,
             threshold=0.7
         )
 
-        ai_response_text = final_answer  # deliver only the validated one
+        ai_response_text = final_answer
+        logger.info(f"✅ Final evaluation score after {attempts} attempts: {score:.3f}")
+
+        # --- Save evaluation result asynchronously ---
+        try:
+            current_user_id = request.user.id
+            eval_service.evaluate_and_store_async(
+                session_id=str(conversation.id),
+                user_id=current_user_id,
+                question=message_text,
+                context=context_text,
+                llm_answer=ai_response_text
+            )
+        except Exception as e:
+            logger.error(f"ChatbotAPIView: Evaluation service error: {e}", exc_info=True)
 
         ai_response_metadata = {
             'intent': processed_result.get('metadata', {}).get('intent', {}),
@@ -255,21 +301,6 @@ class ChatbotAPIView(APIView):
             ai_response_text = str(ai_response_text)
             logger.warning(f"ChatbotAPIView: AI response was not a string. Converted to string: {ai_response_text[:100]}...")
         
-        # Evaluation (async, don't wait)
-        try:
-            eval_service = EvaluationService()
-            current_user_id = request.user.id
-            context_text = str(graphrag_results.get('results', []))
-            eval_service.evaluate_and_store_async(
-                session_id=session_id, 
-                user_id=current_user_id, 
-                question=message_text, 
-                context=context_text, 
-                llm_answer=ai_response_text
-            )
-        except Exception as e:
-            logger.error(f"ChatbotAPIView: Evaluation service error: {e}", exc_info=True)
-
         # --- Save AI response message ---
         ai_message = Message.objects.create(
             conversation=conversation,
