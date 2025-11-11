@@ -215,7 +215,7 @@ const ChatbotPage = () => {
         setTimeoutMessage("");
         timeoutTimerRef.current = setTimeout(() => {
           setIsTimeout(true);
-          setTimeoutMessage("⏱️ The response is taking longer than expected. This could be due to network issues or server load.");
+          setTimeoutMessage("The response is taking longer than expected. This could be due to network issues or server load.");
           setIsTyping(false);
           setTypingMessageContent("");
           fullAiResponseRef.current = "";
@@ -260,7 +260,7 @@ const ChatbotPage = () => {
 
         const newConversation = {
           id: conversation_id,
-          title: messageContentToSend.substring(0, 50) || "New Conversation",
+          title: data.conversation_title || messageContentToSend.substring(0, 50) || "New Conversation",
           created_at: new Date().toISOString(),
         };
 
@@ -511,22 +511,38 @@ const ChatbotPage = () => {
                 </div>
               ))}
               {isTimeout && (
-                <div className="d-flex flex-column gap-2 align-items-start">
-                  <div className="alert alert-warning d-flex align-items-center gap-2 mb-0" role="alert">
-                    <span>⏱️</span>
-                    <div>
-                      <strong>Timeout</strong>
-                      <p className="mb-0">{timeoutMessage || "Response generation took too long."}</p>
+                <div className="px-3 py-2 rounded fs-5 bg-white align-self-start message-fade-in" style={{ maxWidth: "100%" }}>
+                  <div className="d-flex flex-column gap-3">
+                    <div className="d-flex align-items-start gap-2">
+                      <span style={{ fontSize: "1.5rem" }}>⏱️</span>
+                      <div>
+                        <p className="mb-0 text-muted">
+                          {timeoutMessage || "Response generation took too long. Please try again."}
+                        </p>
+                      </div>
                     </div>
+                    <button
+                      className="btn btn-outline-primary d-flex align-items-center gap-2 align-self-start"
+                      onClick={handleRegenerateResponse}
+                      disabled={!lastUserMessage}
+                      style={{
+                        transition: "all 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (lastUserMessage) {
+                          e.currentTarget.style.transform = "scale(1.02)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (lastUserMessage) {
+                          e.currentTarget.style.transform = "scale(1)";
+                        }
+                      }}
+                    >
+                      <FontAwesomeIcon icon={faRotate} />
+                      Regenerate Response
+                    </button>
                   </div>
-                  <button
-                    className="btn btn-primary d-flex align-items-center gap-2"
-                    onClick={handleRegenerateResponse}
-                    disabled={!lastUserMessage}
-                  >
-                    <FontAwesomeIcon icon={faRotate} />
-                    Regenerate Response
-                  </button>
                 </div>
               )}  
               {isTyping && (
@@ -549,7 +565,7 @@ const ChatbotPage = () => {
                     <div className="markdown-content mb-0">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
                         {typingMessageContent}
-                      </ReactMarkdown>
+                      </ReactMarkdown> 
                       <span className="typing-cursor">|</span>
                     </div>
                   )}

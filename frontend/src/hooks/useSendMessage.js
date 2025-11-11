@@ -53,7 +53,7 @@ const useSendMessage = (
     // Frontend timeout: 60 seconds
     timeoutTimerRef.current = setTimeout(() => {
       setIsTimeout(true);
-      setTimeoutMessage("⏱️ The response is taking longer than expected. This could be due to network issues or server load.");
+      setTimeoutMessage("The response is taking longer than expected. This could be due to network issues or server load.");
       setIsTyping(false);
       setTypingMessageContent("");
       fullAiResponseRef.current = "";
@@ -80,7 +80,7 @@ const useSendMessage = (
       // Check if backend returned timeout error (408)
       if (res.status === 408 || res.data.error === 'timeout') {
         setIsTimeout(true);
-        setTimeoutMessage("⏱️ Response generation timed out on the server. Please try regenerating.");
+        setTimeoutMessage("Response generation timed out on the server. Please try regenerating.");
         setIsTyping(false);
         setTypingMessageContent("");
         fullAiResponseRef.current = "";
@@ -158,15 +158,15 @@ const useSendMessage = (
       // Check if it's a timeout error from backend
       if (err.response && err.response.status === 408) {
         setIsTimeout(true);
-        setTimeoutMessage("⏱️ Response generation timed out on the server. Please try regenerating.");
+        setTimeoutMessage("Response generation timed out on the server. Please try regenerating.");
       } else if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
         // Network timeout
         setIsTimeout(true);
-        setTimeoutMessage("🌐 Network timeout. Please check your connection and try again.");
+        setTimeoutMessage("Network timeout. Please check your connection and try again.");
       } else {
         // Other errors
         setIsTimeout(true);
-        setTimeoutMessage("❌ Failed to get response. Please check your connection and try again.");
+        setTimeoutMessage("Failed to get response. Please check your connection and try again.");
       }
       
       setIsTyping(false); // Stop typing on error
