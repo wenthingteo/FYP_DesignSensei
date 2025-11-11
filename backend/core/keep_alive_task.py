@@ -51,6 +51,7 @@ def _run_single_keep_alive_query():
             # Pass the timezone-aware datetime object directly as a parameter.
             result = session.run(query, timestamp=timestamp_for_db)
             # logger.info(f"Keep-alive query executed successfully. Result: {result.single()}")
+            logger.info("Keep-alive query executed successfully.")
             return True
 
     except Exception as e:

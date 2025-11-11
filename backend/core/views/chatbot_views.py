@@ -7,6 +7,10 @@ from django.shortcuts import get_object_or_404
 import logging
 import asyncio
 from asgiref.sync import sync_to_async
+import openai
+import os
+from dotenv import load_dotenv
+from django.conf import settings
 
 from core.models import Conversation, Message
 from core.serializers import MessageSerializer, ConversationSerializer
@@ -46,17 +50,56 @@ class ChatbotAPIView(APIView):
 
     def _generate_conversation_title(self, message_text):
         """
-        Simple helper function to generate a title from the first message.
-        You can improve this logic later (e.g. by calling OpenAI).
+        Generate concise chat title using OpenAI; fallback to truncation.
+        Enforces max 5 words and 25 chars.
         """
+        logger.info("=== TITLE GENERATION START ===")
+        logger.info(f"First 100 chars of message: {message_text[:100]!r}")
+
+        api_key = getattr(settings, "OPENAI_API_KEY", None) or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            logger.error("OPENAI_API_KEY missing, fallback to truncation.")
+            return self._fallback_title(message_text)
+
+        system_prompt = (
+            "You are a title generator. Create a short title (max 5 words, no punctuation) "
+            "that describes the message topic clearly. Return only the title text."
+        )
+        user_prompt = f"Generate a concise title for: {message_text}"
+
         try:
-            # Example: just take first 8-10 words or 50 chars
-            words = message_text.split()
-            title = " ".join(words[:10]) if len(words) > 10 else message_text
-            return title[:50]
+            client = openai.OpenAI(api_key=api_key)
+            response = client.chat.completions.create(
+                model="gpt-4.1-nano-2025-04-14",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_tokens=20,
+                temperature=0.3,
+                timeout=10
+            )
+            title = response.choices[0].message.content.strip().strip(' "\'')
+            words = title.split()
+
+            # limit by words and characters
+            if len(words) > 5:
+                title = " ".join(words[:5])
+            if len(title) > 25:
+                title = title[:25].rsplit(' ', 1)[0] + "…"
+
+            return title or self._fallback_title(message_text)
+
         except Exception as e:
-            logger.error(f"Error generating title: {e}")
-            return "New Conversation"
+            logger.error(f"Error generating title: {e}", exc_info=True)
+            return self._fallback_title(message_text)
+
+    def _fallback_title(self, message_text):
+        words = message_text.strip().split()
+        title = " ".join(words[:5])
+        if len(title) > 25:
+            title = title[:25].rsplit(" ", 1)[0] + "…"
+        return title or "New Conversation"
 
     async def _process_message_async(self, message_text, session_id, conversation_context):
         """
@@ -115,18 +158,22 @@ class ChatbotAPIView(APIView):
         if conversation_id:
             conversation = get_object_or_404(Conversation, id=conversation_id, user=request.user)
         else:
+            logger.info(f"Creating new conversation for user: {request.user.username}")
             conversation = Conversation.objects.create(
                 user=request.user,
-                title='New Conversation',
+                title='Generating title...',  # Temporary title
                 created_at=timezone.now()
             )
             is_new_conversation = True
+            logger.info(f"New conversation created with ID: {conversation.id}")
 
-        # --- Generate conversation title immediately (no Celery) ---
+        # --- Generate AI-powered conversation title for new conversations ---
         if is_new_conversation:
+            logger.info("This is a new conversation - generating AI title...")
             smart_title = self._generate_conversation_title(message_text)
             conversation.title = smart_title
             conversation.save()
+            logger.info(f"Conversation title saved to database: {smart_title}")
 
         # --- Create and save user's message ---
         user_message = Message.objects.create(
@@ -168,6 +215,7 @@ class ChatbotAPIView(APIView):
                 'error': 'timeout',
                 'message': 'Response generation took too long. Please try again.',
                 'conversation_id': conversation.id,
+                'conversation_title': conversation.title,
                 'user_message': MessageSerializer(user_message).data,
             }, status=status.HTTP_408_REQUEST_TIMEOUT)
 
@@ -177,6 +225,7 @@ class ChatbotAPIView(APIView):
                 'error': 'processing_error',
                 'message': 'An error occurred while processing your request.',
                 'conversation_id': conversation.id,
+                'conversation_title': conversation.title,
                 'user_message': MessageSerializer(user_message).data,
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -238,8 +287,10 @@ class ChatbotAPIView(APIView):
             metadata=ai_response_metadata
         )
 
+        logger.info(f"Sending response with title: {conversation.title}")
         return Response({
             'conversation_id': conversation.id,
+            'conversation_title': conversation.title,  # Include the AI-generated title
             'user_message': MessageSerializer(user_message).data,
             'ai_response': MessageSerializer(ai_message).data
         })
