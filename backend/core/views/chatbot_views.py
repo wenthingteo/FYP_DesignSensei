@@ -51,7 +51,7 @@ class ChatbotAPIView(APIView):
     def _generate_conversation_title(self, message_text):
         """
         Generate concise chat title using OpenAI; fallback to truncation.
-        Enforces max 5 words and 25 chars.
+        Enforces max 10 words and 60 chars.
         """
         logger.info("=== TITLE GENERATION START ===")
         logger.info(f"First 100 chars of message: {message_text[:100]!r}")
@@ -62,7 +62,7 @@ class ChatbotAPIView(APIView):
             return self._fallback_title(message_text)
 
         system_prompt = (
-            "You are a title generator. Create a short title (max 5 words, no punctuation) "
+            "You are a title generator. Create a short title (max 10 words, no punctuation) "
             "that describes the message topic clearly. Return only the title text."
         )
         user_prompt = f"Generate a concise title for: {message_text}"
@@ -75,7 +75,7 @@ class ChatbotAPIView(APIView):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=20,
+                max_tokens=30,
                 temperature=0.3,
                 timeout=10
             )
@@ -83,10 +83,10 @@ class ChatbotAPIView(APIView):
             words = title.split()
 
             # limit by words and characters
-            if len(words) > 5:
-                title = " ".join(words[:5])
-            if len(title) > 25:
-                title = title[:25].rsplit(' ', 1)[0] + "…"
+            if len(words) > 10:
+                title = " ".join(words[:10])
+            if len(title) > 60:
+                title = title[:60].rsplit(' ', 1)[0] + "…"
 
             return title or self._fallback_title(message_text)
 
@@ -96,9 +96,9 @@ class ChatbotAPIView(APIView):
 
     def _fallback_title(self, message_text):
         words = message_text.strip().split()
-        title = " ".join(words[:5])
-        if len(title) > 25:
-            title = title[:25].rsplit(" ", 1)[0] + "…"
+        title = " ".join(words[:10])
+        if len(title) > 60:
+            title = title[:60].rsplit(" ", 1)[0] + "…"
         return title or "New Conversation"
 
     async def _process_message_async(self, message_text, session_id, conversation_context):
@@ -147,6 +147,7 @@ class ChatbotAPIView(APIView):
         """Send message (and trigger AI response)"""
         message_text = request.data.get('content')
         conversation_id = request.data.get('conversation')
+        is_regenerate = request.data.get('regenerate', False)
 
         if not message_text:
             return Response({'error': 'Message is required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -175,22 +176,111 @@ class ChatbotAPIView(APIView):
             conversation.save()
             logger.info(f"Conversation title saved to database: {smart_title}")
 
-        # --- Create and save user's message ---
-        user_message = Message.objects.create(
-            conversation=conversation,
-            sender='user',
-            content=message_text,
-            created_at=timezone.now(),
-            metadata={}
-        )
+        # --- Handle regeneration: reuse existing user message ---
+        # Assumes the caller may provide `is_regenerate` (bool) and optionally `message_id` (UUID/int).
+        # `message_text` contains the user's message text (still required).
+        is_regenerate = request.data.get("is_regenerate", False)
+        regenerate_message_id = request.data.get("message_id")  # optional: prefer this
 
-        session_id = str(conversation.id)
-        self.context_manager.add_message(
-            session_id=session_id,
-            role='user',
-            content=message_text,
-            metadata={}
-        )
+        if is_regenerate:
+            logger.info("Regeneration requested - locating existing user message")
+
+            user_message = None
+
+            # 1) Prefer locating by explicit message_id if provided by client
+            if regenerate_message_id:
+                try:
+                    user_message = Message.objects.filter(
+                        id=regenerate_message_id, conversation=conversation, sender='user'
+                    ).first()
+                    if user_message:
+                        logger.info(f"Found user message by id: {user_message.id}")
+                except Exception as e:
+                    logger.warning(f"Error looking up message by id {regenerate_message_id}: {e}", exc_info=True)
+
+            # 2) Fallback: locate latest user message with matching content (best-effort)
+            if not user_message:
+                user_message = Message.objects.filter(
+                    conversation=conversation,
+                    sender='user',
+                    content=message_text
+                ).order_by('-created_at').first()
+
+                if user_message:
+                    logger.info(f"Found user message by text match, id: {user_message.id}")
+
+            # 3) If still not found, create it — but make sure to add it to context afterwards
+            if not user_message:
+                logger.warning("No existing user message found for regeneration. Creating new one and adding to context.")
+                user_message = Message.objects.create(
+                    conversation=conversation,
+                    sender='user',
+                    content=message_text,
+                    created_at=timezone.now(),
+                    metadata={"regenerated": True}
+                )
+                # Since we created it now, we must add it to the in-memory context:
+                session_id = str(conversation.id)
+                self.context_manager.add_message(
+                    session_id=session_id,
+                    role='user',
+                    content=message_text,
+                    metadata=user_message.metadata or {}
+                )
+            else:
+                # If message exists, ensure context contains it; add if missing
+                session_id = str(conversation.id)
+                conversation_context = self.context_manager.get_context(session_id)
+                # Implement a heuristic to determine whether to add: e.g., check last message content
+                if not conversation_context or not any(
+                    (m.get("role") == "user" and m.get("content") == user_message.content) 
+                    for m in conversation_context
+                ):
+                    logger.info("Context missing the original user message; adding it to context.")
+                    self.context_manager.add_message(
+                        session_id=session_id,
+                        role='user',
+                        content=user_message.content,
+                        metadata=user_message.metadata or {}
+                    )
+
+            # Optional: remove or mark previous assistant reply to this user_message
+            # (common UX: replace the old bot reply rather than appending another)
+            try:
+                last_bot_msg = Message.objects.filter(
+                    conversation=conversation,
+                    sender='bot',
+                    created_at__gte=user_message.created_at
+                ).order_by('created_at').first()
+                if last_bot_msg:
+                    # Option A: delete it (uncomment if desired)
+                    # last_bot_msg.delete()
+                    # logger.info(f"Deleted previous bot reply id={last_bot_msg.id} for regeneration.")
+
+                    # Option B: mark it as superseded in metadata
+                    last_bot_msg.metadata = {**(last_bot_msg.metadata or {}), "superseded_by_regen": True}
+                    last_bot_msg.save(update_fields=["metadata"])
+                    logger.info(f"Marked previous bot reply id={last_bot_msg.id} as superseded.")
+            except Exception as e:
+                logger.warning(f"Could not find/modify previous bot reply: {e}", exc_info=True)
+
+        else:
+            # --- Create and save user's message (normal flow) ---
+            user_message = Message.objects.create(
+                conversation=conversation,
+                sender='user',
+                content=message_text,
+                created_at=timezone.now(),
+                metadata={}
+            )
+            session_id = str(conversation.id)
+            # add the new user message to context
+            self.context_manager.add_message(
+                session_id=session_id,
+                role='user',
+                content=message_text,
+                metadata={}
+            )   
 
         conversation_context = self.context_manager.get_context(session_id)
 
@@ -288,9 +378,11 @@ class ChatbotAPIView(APIView):
         )
 
         logger.info(f"Sending response with title: {conversation.title}")
+        
+        # Return response data
         return Response({
             'conversation_id': conversation.id,
-            'conversation_title': conversation.title,  # Include the AI-generated title
+            'conversation_title': conversation.title,
             'user_message': MessageSerializer(user_message).data,
             'ai_response': MessageSerializer(ai_message).data
         })

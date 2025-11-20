@@ -246,7 +246,20 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                 </div>
               ) : (
                 <>
-                  <span style={{ fontSize: "18px", color: "#333" }}>{conv.title}</span>
+                  <span 
+                    style={{ 
+                      fontSize: "18px", 
+                      color: "#333",
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      marginRight: '8px'
+                    }}
+                    title={conv.title}
+                  >
+                    {conv.title}
+                  </span>
                   <div onClick={(e) => {
                     e.stopPropagation();
                     toggleMenu(conv.id);

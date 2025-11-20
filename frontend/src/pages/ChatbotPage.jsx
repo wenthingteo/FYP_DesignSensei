@@ -12,6 +12,7 @@ import useSendMessage from "../hooks/useSendMessage";
 import useSidebarUpdates from '../hooks/useSidebarUpdates';
 import './ChatbotPage.css';
 import DeleteConfirmationModal from "../components/DeleteConfirmationModal";
+import ErrorMessage from "../components/ErrorMessage";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -30,8 +31,8 @@ const ChatbotPage = () => {
 
   const [typingMessageContent, setTypingMessageContent] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [isTimeout, setIsTimeout] = useState(false);
-  const [timeoutMessage, setTimeoutMessage] = useState("");
+  const [errorState, setErrorState] = useState(null); // null, 'timeout', 'network', 'server'
+  const [errorMessage, setErrorMessage] = useState("");
   const [lastUserMessage, setLastUserMessage] = useState(null);
   
   // NEW: Store full AI response for tab switching recovery
@@ -39,6 +40,8 @@ const ChatbotPage = () => {
   const typingIntervalRef = useRef(null);
   const currentIndexRef = useRef(0);
   const timeoutTimerRef = useRef(null);
+  const abortControllerRef = useRef(null);
+  const lastMessageIdRef = useRef(null); // Track last message ID for regeneration
 
   const [showWelcomePage, setShowWelcomePage] = useState(
     currentConversation === "new" || (!currentConversation && messages.length === 0)
@@ -57,9 +60,10 @@ const ChatbotPage = () => {
     typingIntervalRef,
     currentIndexRef,
     timeoutTimerRef,
-    setIsTimeout,
-    setTimeoutMessage,
-    setLastUserMessage
+    setErrorState,
+    setErrorMessage,
+    setLastUserMessage,
+    abortControllerRef // Pass abort controller ref
   );
 
   const currentConv = conversations.find(c => c.id === currentConversation);
@@ -131,7 +135,7 @@ const ChatbotPage = () => {
   // --- Scroll to bottom when new messages appear ---
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentMessages, typingMessageContent, isTimeout]);
+  }, [currentMessages, typingMessageContent, errorState]);
 
   // --- Sidebar toggle logic ---
   useEffect(() => {
@@ -182,19 +186,157 @@ const ChatbotPage = () => {
 
   // --- Regenerate response function ---
   const handleRegenerateResponse = useCallback(async () => {
-    if (!lastUserMessage) return;
+    if (!lastUserMessage || !currentConversation || currentConversation === "new") return;
 
-    // Reset timeout state
-    setIsTimeout(false);
-    setTimeoutMessage("");
+    // Reset error state
+    setErrorState(null);
+    setErrorMessage("");
+    
+    // Reset typing state
+    setIsTyping(true);
+    setTypingMessageContent("");
+    fullAiResponseRef.current = "";
+    currentIndexRef.current = 0;
 
-    // Resend the last message
-    if (currentConversation === "new" || !currentConversation) {
-      await handleSend(lastUserMessage);
-    } else {
-      await sendMessage(lastUserMessage);
+    // Clear any existing abort controller
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
-  }, [lastUserMessage, currentConversation, sendMessage]);
+    abortControllerRef.current = new AbortController();
+
+    // Start timeout
+    clearAllTimers();
+    timeoutTimerRef.current = setTimeout(() => {
+      setErrorState('timeout');
+      setErrorMessage("Response generation is taking longer than expected. This might be due to high server load or complex processing.");
+      setIsTyping(false);
+      setTypingMessageContent("");
+      fullAiResponseRef.current = "";
+      currentIndexRef.current = 0;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      clearAllTimers();
+    }, 55000);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/chat/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCookie("csrftoken"),
+        },
+        credentials: "include",
+        signal: abortControllerRef.current.signal,
+        body: JSON.stringify({
+          content: lastUserMessage,
+          conversation: currentConversation,
+          regenerate: true, // Flag to indicate this is a regeneration
+        }),
+      });
+
+      clearTimeout(timeoutTimerRef.current);
+      timeoutTimerRef.current = null;
+
+      if (response.status === 408) {
+        const errorData = await response.json();
+        setErrorState('timeout');
+        setErrorMessage(errorData.message || "The server took too long to process your request.");
+        setIsTyping(false);
+        setTypingMessageContent("");
+        fullAiResponseRef.current = "";
+        currentIndexRef.current = 0;
+        clearAllTimers();
+        return;
+      }
+
+      if (!response.ok) throw new Error("Failed to regenerate response");
+
+      const data = await response.json();
+      const { ai_response } = data;
+
+      // Animate the new response
+      const fullAiResponseContent = ai_response.content;
+      fullAiResponseRef.current = fullAiResponseContent;
+      currentIndexRef.current = 0;
+
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+      }
+
+      typingIntervalRef.current = setInterval(() => {
+        if (currentIndexRef.current < fullAiResponseContent.length) {
+          setTypingMessageContent(fullAiResponseContent.substring(0, currentIndexRef.current + 20));
+          currentIndexRef.current += 20;
+        } else {
+          clearAllTimers();
+          setIsTyping(false);
+          setTypingMessageContent("");
+          
+          // Check if there is already an AI response for this user message
+          setChatData((prev) => {
+            // Find the index of the user message with matching content
+            const userMessageIndex = prev.messages.findIndex(
+              m => m.sender === 'user' && m.content === lastUserMessage
+            );
+            
+            // Check if there is already a bot message after this user message
+            const existingBotIndex = userMessageIndex !== -1 
+              ? prev.messages.findIndex((m, idx) => idx > userMessageIndex && m.sender === 'bot')
+              : -1;
+            
+            if (existingBotIndex !== -1) {
+              // Replace existing bot message (true regeneration)
+              const updatedMessages = [...prev.messages];
+              updatedMessages[existingBotIndex] = {
+                ...ai_response,
+                content: fullAiResponseContent
+              };
+              return { ...prev, messages: updatedMessages };
+            } else {
+              // No AI response yet, add new one (first generation after error)
+              return {
+                ...prev,
+                messages: [...prev.messages, { ...ai_response, content: fullAiResponseContent }]
+              };
+            }
+          });
+          
+          fullAiResponseRef.current = "";
+          currentIndexRef.current = 0;
+          setLastUserMessage(null);
+        }
+      }, 0.5);
+
+    } catch (error) {
+      clearAllTimers();
+      
+      if (error.name === 'AbortError') {
+        // Request was aborted - this is intentional, don't show error
+        setIsTyping(false);
+        setTypingMessageContent("");
+        fullAiResponseRef.current = "";
+        currentIndexRef.current = 0;
+        return;
+      }
+      
+      if (error.message.includes('Network Error') || !window.navigator.onLine) {
+        setErrorState('network');
+        setErrorMessage("Unable to connect to the server. Please check your internet connection.");
+      } else if (error.code === 'ECONNABORTED') {
+        setErrorState('timeout');
+        setErrorMessage("Request timed out. Please check your internet connection and try again.");
+      } else {
+        setErrorState('server');
+        setErrorMessage("Failed to regenerate response. Please try again.");
+      }
+      
+      setIsTyping(false);
+      setTypingMessageContent("");
+      fullAiResponseRef.current = "";
+      currentIndexRef.current = 0;
+    }
+  }, [lastUserMessage, currentConversation, setChatData, clearAllTimers]);
 
   // --- Send message (main logic) ---
   const handleSend = async (messageContentToSend = inputValue.trim()) => {
@@ -210,18 +352,27 @@ const ChatbotPage = () => {
         setTypingMessageContent("");
         setIsTyping(true);
 
+        // Clear any existing abort controller
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+
         // --- Timeout logic ---
-        setIsTimeout(false);
-        setTimeoutMessage("");
+        setErrorState(null);
+        setErrorMessage("");
         timeoutTimerRef.current = setTimeout(() => {
-          setIsTimeout(true);
-          setTimeoutMessage("The response is taking longer than expected. This could be due to network issues or server load.");
+          setErrorState('timeout');
+          setErrorMessage("Response generation is taking longer than expected. This might be due to high server load or complex processing.");
           setIsTyping(false);
           setTypingMessageContent("");
           fullAiResponseRef.current = "";
           currentIndexRef.current = 0;
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+          }
           clearAllTimers();
-        }, 60000); // 60 seconds timeout
+        }, 55000); // 55 seconds timeout (backend is 50s + 5s buffer)
 
         const response = await fetch("http://127.0.0.1:8000/api/chat/", {
           method: "POST",
@@ -230,6 +381,7 @@ const ChatbotPage = () => {
             "X-CSRFToken": getCookie("csrftoken"),
           },
           credentials: "include",
+          signal: abortControllerRef.current.signal,
           body: JSON.stringify({
             content: messageContentToSend,
             conversation: null,
@@ -243,8 +395,8 @@ const ChatbotPage = () => {
         // Check for timeout response from backend
         if (response.status === 408) {
           const errorData = await response.json();
-          setIsTimeout(true);
-          setTimeoutMessage(errorData.message || "⏱️ Response generation timed out on the server. Please try regenerating.");
+          setErrorState('timeout');
+          setErrorMessage(errorData.message || "The server took too long to process your request.");
           setIsTyping(false);
           setTypingMessageContent("");
           fullAiResponseRef.current = "";
@@ -309,8 +461,21 @@ const ChatbotPage = () => {
       } catch (error) {
         console.error("Error creating conversation:", error);
         clearAllTimers();
-        setIsTimeout(true);
-        setTimeoutMessage("❌ Failed to create conversation. Please try again.");
+        
+        if (error.name === 'AbortError') {
+          setErrorState('network');
+          setErrorMessage("Request cancelled. Please check your internet connection.");
+        } else if (error.message.includes('Network Error') || !window.navigator.onLine) {
+          setErrorState('network');
+          setErrorMessage("Unable to connect to the server. Please check your internet connection.");
+        } else if (error.code === 'ECONNABORTED') {
+          setErrorState('timeout');
+          setErrorMessage("Request timed out. Please check your internet connection and try again.");
+        } else {
+          setErrorState('server');
+          setErrorMessage("Failed to create conversation. Please try again.");
+        }
+        
         setIsTyping(false);
         setTypingMessageContent("");
         fullAiResponseRef.current = "";
@@ -327,6 +492,9 @@ const ChatbotPage = () => {
   useEffect(() => {
     return () => {
       clearAllTimers();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     };
   }, [clearAllTimers]);
 
@@ -510,39 +678,14 @@ const ChatbotPage = () => {
                   )}
                 </div>
               ))}
-              {isTimeout && (
-                <div className="px-3 py-2 rounded fs-5 bg-white align-self-start message-fade-in" style={{ maxWidth: "100%" }}>
-                  <div className="d-flex flex-column gap-3">
-                    <div className="d-flex align-items-start gap-2">
-                      <span style={{ fontSize: "1.5rem" }}>⏱️</span>
-                      <div>
-                        <p className="mb-0 text-muted">
-                          {timeoutMessage || "Response generation took too long. Please try again."}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      className="btn btn-outline-primary d-flex align-items-center gap-2 align-self-start"
-                      onClick={handleRegenerateResponse}
-                      disabled={!lastUserMessage}
-                      style={{
-                        transition: "all 0.2s ease",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (lastUserMessage) {
-                          e.currentTarget.style.transform = "scale(1.02)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (lastUserMessage) {
-                          e.currentTarget.style.transform = "scale(1)";
-                        }
-                      }}
-                    >
-                      <FontAwesomeIcon icon={faRotate} />
-                      Regenerate Response
-                    </button>
-                  </div>
+              {errorState && (
+                <div className="align-self-start" style={{ maxWidth: "100%" }}>
+                  <ErrorMessage 
+                    errorState={errorState}
+                    errorMessage={errorMessage}
+                    onRetry={handleRegenerateResponse}
+                    isRetryDisabled={!lastUserMessage}
+                  />
                 </div>
               )}  
               {isTyping && (
