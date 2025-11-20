@@ -9,9 +9,10 @@ const useSendMessage = (
   typingIntervalRef,
   currentIndexRef,
   timeoutTimerRef,
-  setIsTimeout,
-  setTimeoutMessage,
-  setLastUserMessage
+  setErrorState,
+  setErrorMessage,
+  setLastUserMessage,
+  abortControllerRef // Add abort controller
 ) => {
   return async (content) => {
     const userTempMessage = {
@@ -35,9 +36,9 @@ const useSendMessage = (
     setIsTyping(true);
     setTypingMessageContent(""); // Clear previous typing content
 
-    // --- Timeout logic for existing conversations ---
-    setIsTimeout(false);
-    setTimeoutMessage("");
+    // --- Reset error state ---
+    setErrorState(null);
+    setErrorMessage("");
     
     const clearAllTimers = () => {
       if (timeoutTimerRef.current) {
@@ -50,16 +51,27 @@ const useSendMessage = (
       }
     };
 
-    // Frontend timeout: 60 seconds
+    // Clear any existing abort controller
+    if (abortControllerRef && abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    if (abortControllerRef) {
+      abortControllerRef.current = new AbortController();
+    }
+
+    // Frontend timeout: 55 seconds (backend timeout is 50s, we add 5s buffer)
     timeoutTimerRef.current = setTimeout(() => {
-      setIsTimeout(true);
-      setTimeoutMessage("The response is taking longer than expected. This could be due to network issues or server load.");
+      setErrorState('timeout');
+      setErrorMessage("Response generation is taking longer than expected. This might be due to high server load or complex processing.");
       setIsTyping(false);
       setTypingMessageContent("");
       fullAiResponseRef.current = "";
       currentIndexRef.current = 0;
+      if (abortControllerRef && abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
       clearAllTimers();
-    }, 60000); // 60 seconds timeout
+    }, 55000); // 55 seconds timeout
 
     try {
       const res = await axios.post("http://127.0.0.1:8000/api/chat/", {
@@ -71,6 +83,7 @@ const useSendMessage = (
           'X-CSRFToken': getCookie('csrftoken'),
           'Content-Type': 'application/json'
         },
+        signal: abortControllerRef ? abortControllerRef.current.signal : undefined,
       });
 
       // Clear timeout since we got a response
@@ -79,19 +92,24 @@ const useSendMessage = (
 
       // Check if backend returned timeout error (408)
       if (res.status === 408 || res.data.error === 'timeout') {
-        setIsTimeout(true);
-        setTimeoutMessage("Response generation timed out on the server. Please try regenerating.");
+        setErrorState('timeout');
+        setErrorMessage(res.data.message || "The server took too long to process your request.");
         setIsTyping(false);
         setTypingMessageContent("");
         fullAiResponseRef.current = "";
         currentIndexRef.current = 0;
         clearAllTimers();
         
-        // Remove temp user message since it was saved on backend
-        setChatData((prev) => ({
-          ...prev,
-          messages: prev.messages.filter((msg) => msg && msg.id !== userTempMessage.id),
-        }));
+        // Replace temp with real user_message from backend
+        if (res.data.user_message) {
+          setChatData((prev) => ({
+            ...prev,
+            messages: prev.messages.map(msg => 
+              msg.id === userTempMessage.id ? res.data.user_message : msg
+            ),
+          }));
+        }
+        
         return;
       }
 
@@ -116,12 +134,12 @@ const useSendMessage = (
         } else {
           clearAllTimers();
           setIsTyping(false);
-          setTypingMessageContent(""); // Clear typing content after full message is displayed
+          setTypingMessageContent("");
 
-          // Now, add the complete AI message to the chat data
+          // Replace temp message with real messages from backend
           setChatData((prev) => {
             const filteredMessages = prev.messages.filter((msg) =>
-              msg && msg.id !== userTempMessage.id // Remove temp user message
+              msg && msg.id !== userTempMessage.id
             );
 
             const messagesToAdd = [];
@@ -129,7 +147,7 @@ const useSendMessage = (
               messagesToAdd.push(user_message);
             }
             if (ai_response && typeof ai_response === 'object') {
-              messagesToAdd.push({ ...ai_response, content: fullAiResponseContent }); // Ensure full content is saved
+              messagesToAdd.push({ ...ai_response, content: fullAiResponseContent });
             }
 
             return {
@@ -138,11 +156,9 @@ const useSendMessage = (
             };
           });
 
-          // Clear refs after completion
           fullAiResponseRef.current = "";
           currentIndexRef.current = 0;
           
-          // Clear last user message after successful response
           if (setLastUserMessage) {
             setLastUserMessage(null);
           }
@@ -155,33 +171,52 @@ const useSendMessage = (
       // Clear timeout timer
       clearAllTimers();
       
-      // Check if it's a timeout error from backend
-      if (err.response && err.response.status === 408) {
-        setIsTimeout(true);
-        setTimeoutMessage("Response generation timed out on the server. Please try regenerating.");
-      } else if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
-        // Network timeout
-        setIsTimeout(true);
-        setTimeoutMessage("Network timeout. Please check your connection and try again.");
-      } else {
-        // Other errors
-        setIsTimeout(true);
-        setTimeoutMessage("Failed to get response. Please check your connection and try again.");
+      // Check if request was aborted (network disconnection)
+      if (err.name === 'AbortError' || err.code === 'ERR_CANCELED') {
+        setErrorState('network');
+        setErrorMessage("Request cancelled. Please check your internet connection.");
+        setIsTyping(false);
+        setTypingMessageContent("");
+        fullAiResponseRef.current = "";
+        currentIndexRef.current = 0;
+        // Keep temp message displayed
+        return;
       }
       
-      setIsTyping(false); // Stop typing on error
-      setTypingMessageContent(""); // Clear typing content on error
+      // Determine error type and set appropriate message
+      if (err.response) {
+        // Server responded with an error
+        if (err.response.status === 408) {
+          setErrorState('timeout');
+          setErrorMessage(err.response.data?.message || "The server took too long to process your request. Please try regenerating your question.");
+        } else if (err.response.status >= 500) {
+          setErrorState('server');
+          setErrorMessage("The server encountered an error. Please try again in a moment.");
+        } else {
+          setErrorState('server');
+          setErrorMessage(err.response.data?.message || "An error occurred while processing your request.");
+        }
+      } else if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+        // Network timeout
+        setErrorState('network');
+        setErrorMessage("Request timed out. Please check your internet connection and try again.");
+      } else if (err.message.includes('Network Error') || !window.navigator.onLine) {
+        // Network error or offline
+        setErrorState('network');
+        setErrorMessage("Unable to connect to the server. Please check your internet connection.");
+      } else {
+        // Other errors
+        setErrorState('server');
+        setErrorMessage("An unexpected error occurred. Please try again.");
+      }
       
-      // Clear refs on error
+      setIsTyping(false);
+      setTypingMessageContent("");
+      
       fullAiResponseRef.current = "";
       currentIndexRef.current = 0;
       
-      setChatData((prev) => ({
-        ...prev,
-        messages: prev.messages.filter((msg) =>
-          msg && msg.id !== userTempMessage.id
-        ),
-      }));
+      // Keep temp message displayed so user can regenerate
     }
   };
 };
