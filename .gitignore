@@ -52,3 +52,40 @@ knowledge_graph.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# python file
+%USERPROFILE%\.pyenv
+# Python virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Pyenv
+.python-version
+%USERPROFILE%\.pyenv/
+*.pyenv/
+
+# Pyenv-win installation files
+*.bat
+*.ps1
+*.exe
+*.dll
+*.config
+LICENSE.txt
+winterop.dll
+wix*.dll
+Wix*.dll
+
+# OR more specifically for pyenv-win files:
+pyenv.bat
+pyenv.ps1
+dark.exe
+dark.exe.config
+winterop.dll
+wix*.dll
+Wix*.dll
+
+# Version files
+.version
+versions_cache.xml

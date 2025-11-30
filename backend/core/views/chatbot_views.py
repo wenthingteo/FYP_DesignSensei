@@ -353,8 +353,9 @@ class ChatbotAPIView(APIView):
         draft_answer = processed_result.get('response', "An error occurred generating response.")
         context_text = str(graphrag_results.get('results', []))
 
-        # --- Evaluate BEFORE sending (auto-regenerates up to 3 times) ---
+        # --- Evaluate BEFORE sending (RAGAS-capable evaluation + auto-regeneration) ---
         eval_service = EvaluationService()
+
         final_answer, score, attempts = eval_service.evaluate_before_send(
             question=message_text,
             context=context_text,
@@ -364,20 +365,19 @@ class ChatbotAPIView(APIView):
         )
 
         ai_response_text = final_answer
-        logger.info(f"✅ Final evaluation score after {attempts} attempts: {score:.3f}")
+        logger.info(f"✅ Final hybrid evaluation score after {attempts} attempts: {score:.3f}")
 
-        # --- Save evaluation result asynchronously ---
+        # --- Store full evaluation details asynchronously ---
         try:
-            current_user_id = request.user.id
             eval_service.evaluate_and_store_async(
                 session_id=str(conversation.id),
-                user_id=current_user_id,
+                user_id=request.user.id,
                 question=message_text,
                 context=context_text,
                 llm_answer=ai_response_text
             )
         except Exception as e:
-            logger.error(f"ChatbotAPIView: Evaluation service error: {e}", exc_info=True)
+            logger.error(f"[Evaluation Storage Error] {e}", exc_info=True)
 
         ai_response_metadata = {
             'intent': processed_result.get('metadata', {}).get('intent', {}),
