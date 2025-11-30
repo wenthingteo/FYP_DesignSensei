@@ -62,6 +62,8 @@ class EvaluationResult(models.Model):
     evaluation_timestamp = models.DateTimeField(default=timezone.now)
     evaluation_details = models.JSONField(default=dict, blank=True)
     action_taken = models.CharField(max_length=50, default="none")
+    ragas_score = models.FloatField(null=True, blank=True)
+    ragas_details = models.JSONField(null=True, blank=True)
 
     def __str__(self):
         return f"Evaluation for session {self.session_id} - {self.question[:40]}"
