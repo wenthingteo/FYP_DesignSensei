@@ -12,6 +12,7 @@ venv/
 .venv/
 env/
 ENV/
+ragas-env/
 
 # Django database
 db.sqlite3
