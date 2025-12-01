@@ -6,21 +6,26 @@ import os
 from typing import Optional, List, Tuple, Dict
 
 from sentence_transformers import SentenceTransformer, util
+
+# ---- BERT SCORE ----
 try:
     from bert_score import score as bert_score_fn
     BERT_AVAILABLE = True
 except Exception:
     BERT_AVAILABLE = False
 
-# RAGAS factuality metric (Python 3.11 OK)
 try:
     from datasets import Dataset
     from ragas import evaluate
-    from ragas.metrics import factuality
+    from ragas.metrics import FactualCorrectness, Faithfulness, faithfulness
+    
     RAGAS_AVAILABLE = True
-except Exception:
+    print("\n=== RAGAS IMPORTED SUCCESSFULLY ===\n")
+except Exception as e:
+    print("\nRagas import failed:", e)
     RAGAS_AVAILABLE = False
 
+# OpenAI
 from openai import OpenAI
 from django.utils import timezone
 from core.models import EvaluationResult, GroundTruth
@@ -28,14 +33,13 @@ from core.models import EvaluationResult, GroundTruth
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# -------- EMBED MODEL CONFIG ----------
+# EMBED MODEL CONFIG 
 EMBED_MODEL_NAME = os.getenv("EVAL_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 
-# OpenAI Client
 LLM_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=LLM_API_KEY)
 
-# -------- SCORING WEIGHTS ----------
+# SCORING WEIGHTS 
 RELEVANCE_WEIGHT = 0.40
 RUBRIC_WEIGHT = 0.25
 BERT_WEIGHT = 0.15
@@ -46,9 +50,7 @@ REGEN_THRESHOLD = float(os.getenv("EVAL_REGEN_THRESHOLD", 0.45))
 MAX_REGEN_ATTEMPTS = int(os.getenv("EVAL_MAX_REGEN", 3))
 
 
-# -----------------------------------
-# Embedding model (global singleton)
-# -----------------------------------
+# Embedding model
 _model = None
 def get_embedding_model():
     global _model
@@ -76,9 +78,6 @@ def compute_bertscore(preds: List[str], refs: List[str]) -> float:
 
 
 def call_llm_rubric(question: str, answer: str, ground_truth: Optional[str] = None) -> Tuple[float, str]:
-    """
-    LLM rubric score (0..1).
-    """
     system = "You are an automated strict grader. Rate correctness and helpfulness from 0.0 to 1.0."
 
     if ground_truth:
@@ -123,35 +122,73 @@ def call_llm_rubric(question: str, answer: str, ground_truth: Optional[str] = No
         return 0.0, f"error: {e}"
 
 
-# -----------------------------------
-# RAGAS FACTUALITY (0.1+)
-# -----------------------------------
+# RAGAS FACTUALITY (0.3.9)
 def compute_ragas_factuality(question: str, answer: str, context_text: Optional[str]):
     """
-    Returns: (score, {details})
+    Works with Ragas 0.3.9.
+    Uses FactualCorrectness and Faithfulness metrics.
+    Requires:
+    - question
+    - answer
+    - contexts (list of strings)
+    - ground_truth (string) - optional
     """
     if not RAGAS_AVAILABLE:
         return 0.0, {"error": "RAGAS not installed"}
 
     try:
-        ds = Dataset.from_dict({
+        gt = _lookup_ground_truth(question)
+        
+        # Prepare dataset
+        data = {
             "question": [question],
             "answer": [answer],
             "contexts": [[context_text or ""]],
-        })
+        }
+        
+        # Add ground_truth if available
+        if gt:
+            data["ground_truth"] = [gt]
+        
+        ds = Dataset.from_dict(data)
 
-        res = evaluate(ds, metrics=[factuality])
-        score = float(res["factuality"][0])
-        return score, {"factuality": score}
+        # Use faithfulness (doesn't require ground truth) and factual correctness if we have GT
+        if gt:
+            # Initialize metrics
+            factual_metric = FactualCorrectness()
+            faith_metric = Faithfulness()
+            
+            result = evaluate(ds, metrics=[faith_metric, factual_metric])
+            
+            # Get scores
+            faith_score = result.get("faithfulness", 0.0)
+            fact_score = result.get("factual_correctness", 0.0)
+            
+            # Average the two scores
+            score = (faith_score + fact_score) / 2.0
+            
+            return float(score), {
+                "faithfulness": float(faith_score),
+                "factual_correctness": float(fact_score),
+                "combined": float(score)
+            }
+        else:
+            # Without ground truth, only use faithfulness (context-based)
+            faith_metric = Faithfulness()
+            result = evaluate(ds, metrics=[faith_metric])
+            score = result.get("faithfulness", 0.0)
+            
+            return float(score), {
+                "faithfulness": float(score),
+                "note": "No ground truth available"
+            }
 
     except Exception as e:
-        logger.warning("RAGAS factuality failed: %s", e)
+        logger.warning("RAGAS evaluation failed: %s", e)
         return 0.0, {"error": str(e)}
 
 
-# -----------------------------------
-# Ground Truth lookup
-# -----------------------------------
+# Ground Truth
 def _lookup_ground_truth(question: str):
     try:
         gt = GroundTruth.objects.filter(question=question, verified=True).order_by("-created_at").first()
@@ -161,17 +198,13 @@ def _lookup_ground_truth(question: str):
         return None
 
 
-# ===================================
-#   MAIN EVALUATION SERVICE
-# ===================================
+
+#   EVALUATION SERVICE
 class EvaluationService:
     def __init__(self):
         self.model = get_embedding_model()
         logger.info("EvaluationService initialized. RAGAS available=%s", RAGAS_AVAILABLE)
 
-    # ----------------------------------------------------
-    # Used inside ChatbotAPIView BEFORE sending to user
-    # ----------------------------------------------------
     def evaluate_before_send(self, question, context, draft_answer, max_attempts=3, threshold=0.7):
         attempt = 0
         final_answer = draft_answer
@@ -182,17 +215,13 @@ class EvaluationService:
         while attempt < max_attempts:
             attempt += 1
 
-            # 1) Relevance
             qtxt = question + "\n\nContext:\n" + (context or "")
             relevance = compute_cosine(qtxt, final_answer)
 
-            # 2) BERTScore vs ground truth
             bert = compute_bertscore([final_answer], [ground_truth]) if ground_truth else 0.0
 
-            # 3) LLM rubric
             rubric, rationale = call_llm_rubric(question, final_answer, ground_truth)
 
-            # 4) RAGAS factuality
             ragas_score, ragas_details = compute_ragas_factuality(
                 question=question,
                 answer=final_answer,
@@ -214,15 +243,13 @@ class EvaluationService:
             if combined >= threshold:
                 return final_answer, combined, attempt
 
-            # regenerate
             final_answer = self._regenerate_answer(question, context, final_answer)
             final_score = combined
 
         return final_answer, final_score, attempt
 
-    # ----------------------------------------------------
-    # Async DB storage
-    # ----------------------------------------------------
+
+    # DB Storage
     def evaluate_and_store_async(self, session_id, user_id, question, context, llm_answer):
         thread = threading.Thread(
             target=self._evaluate_and_store,
@@ -273,19 +300,18 @@ class EvaluationService:
         except Exception as e:
             logger.exception("Failed to save EvaluationResult: %s", e)
 
-    # ----------------------------------------------------
-    # Regenerate answer
-    # ----------------------------------------------------
+
+    # Regeneration
     def _regenerate_answer(self, question: str, context: Optional[str], previous_answer: str) -> str:
         prompt = f"""
-Improve the answer below so it is clearer, more accurate, and directly addresses the question.
+        Improve the answer below so it is clearer, more accurate, and directly addresses the question.
 
-Question: {question}
-Context: {context or "(none)"}
-Previous answer: {previous_answer}
+        Question: {question}
+        Context: {context or "(none)"}
+        Previous answer: {previous_answer}
 
-Return one improved answer only (max 250 words). If unsure about facts, say "I might be mistaken" and recommend where to verify.
-"""
+        Return one improved answer only (max 250 words). If unsure about facts, say "I might be mistaken" and recommend where to verify.
+        """
 
         try:
             resp = client.chat.completions.create(
