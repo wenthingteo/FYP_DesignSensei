@@ -5,7 +5,7 @@ from rest_framework_nested.routers import NestedDefaultRouter
 from core.views import auth_views
 from core.views.api_views import ConversationViewSet, MessageViewSet
 from core.views.chatbot_views import ChatbotAPIView
-from core.views.feedback_views import FeedbackView
+from core.views.feedback_views import FeedbackView, AdminFeedbackView
 
 # Base router for conversations
 router = DefaultRouter()
@@ -25,6 +25,8 @@ urlpatterns = [
     path('register/', auth_views.register, name='api_register'), # Removed 'api/' prefix
     path('logout/', auth_views.logout, name='api_logout'), # Removed 'api/' prefix
     path('feedback/', FeedbackView.as_view(), name='api_feedback'), # Removed 'api/' prefix
+    path('admin/feedback/', AdminFeedbackView.as_view(), name='admin_feedback_list'),
+    path('admin/feedback/<int:feedback_id>/', AdminFeedbackView.as_view(), name='admin_feedback_delete'),
 
     # === Chat-related API endpoints ===
     path('chat/', ChatbotAPIView.as_view(), name='chatbot_api'), # Removed 'api/' prefix
