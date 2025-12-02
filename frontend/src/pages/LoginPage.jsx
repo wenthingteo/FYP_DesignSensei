@@ -6,6 +6,11 @@ function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminUsername, setAdminUsername] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminError, setAdminError] = useState("");
+  const [adminLoading, setAdminLoading] = useState(false);
   const navigate = useNavigate();
   const { fetchChats } = useContext(ChatContext);
 
@@ -35,6 +40,69 @@ function LoginPage() {
       console.error("Login error:", error);
       setErrorMsg("Something went wrong. Please try again.");
     }
+  };
+
+  const handleAdminLogin = async (e) => {
+    e.preventDefault();
+    setAdminError("");
+    setAdminLoading(true);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/login/", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username: adminUsername, password: adminPassword }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Now check if user has admin access by trying to fetch feedback
+        try {
+          const feedbackResponse = await fetch("http://127.0.0.1:8000/api/admin/feedback/", {
+            method: "GET",
+            credentials: "include",
+          });
+
+          if (feedbackResponse.ok) {
+            // User is admin, navigate to dashboard
+            setShowAdminModal(false);
+            navigate("/admin/feedback");
+          } else if (feedbackResponse.status === 403) {
+            setAdminError("Access denied. Admin privileges required.");
+          } else {
+            setAdminError("Failed to verify admin access.");
+          }
+        } catch (error) {
+          console.error("Admin verification error:", error);
+          setAdminError("Failed to verify admin access.");
+        }
+      } else {
+        setAdminError(data.error || "Invalid credentials");
+      }
+    } catch (error) {
+      console.error("Admin login error:", error);
+      setAdminError("Something went wrong. Please try again.");
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const openAdminModal = () => {
+    setShowAdminModal(true);
+    setAdminUsername("");
+    setAdminPassword("");
+    setAdminError("");
+  };
+
+  const closeAdminModal = () => {
+    setShowAdminModal(false);
+    setAdminUsername("");
+    setAdminPassword("");
+    setAdminError("");
   };
 
   const styles = {
@@ -177,6 +245,91 @@ function LoginPage() {
       padding: 0,
       fontWeight: "600",
       fontSize: "1.05rem",
+    },
+    adminBtn: {
+      width: "100%",
+      padding: "0.875rem 1rem",
+      backgroundColor: "#6b7280",
+      color: "white",
+      border: "none",
+      borderRadius: "0.5rem",
+      fontSize: "1rem",
+      fontWeight: "600",
+      cursor: "pointer",
+      transition: "all 0.2s",
+      marginTop: "1.5rem",
+      boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+    },
+    divider: {
+      display: "flex",
+      alignItems: "center",
+      textAlign: "center",
+      margin: "2rem 0 1rem 0",
+    },
+    dividerLine: {
+      flex: 1,
+      borderBottom: "1px solid #d1d5db",
+    },
+    dividerText: {
+      padding: "0 1rem",
+      color: "#9ca3af",
+      fontSize: "0.95rem",
+      fontWeight: "500",
+    },
+    modalOverlay: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 1000,
+    },
+    modalContent: {
+      backgroundColor: "white",
+      borderRadius: "1rem",
+      padding: "2rem",
+      width: "90%",
+      maxWidth: "450px",
+      boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+    },
+    modalHeader: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: "1.5rem",
+    },
+    modalTitle: {
+      fontSize: "1.5rem",
+      fontWeight: "600",
+      color: "#1f2937",
+      margin: 0,
+    },
+    closeBtn: {
+      background: "none",
+      border: "none",
+      fontSize: "1.5rem",
+      color: "#9ca3af",
+      cursor: "pointer",
+      padding: "0",
+      width: "32px",
+      height: "32px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: "0.375rem",
+      transition: "all 0.2s",
+    },
+    modalBody: {
+      marginBottom: "1.5rem",
+    },
+    modalSubtitle: {
+      color: "#6b7280",
+      marginBottom: "1.5rem",
+      fontSize: "0.95rem",
     },
   };
 
@@ -346,9 +499,140 @@ function LoginPage() {
                 Create an account
               </button>
             </p>
+
+            {/* Divider */}
+            <div style={styles.divider}>
+              <div style={styles.dividerLine}></div>
+              <span style={styles.dividerText}>ADMIN ACCESS</span>
+              <div style={styles.dividerLine}></div>
+            </div>
+
+            {/* Admin Feedback Button */}
+            <button
+              type="button"
+              onClick={openAdminModal}
+              style={styles.adminBtn}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#4b5563";
+                e.currentTarget.style.boxShadow = "0 4px 6px rgba(107,114,128,0.3)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "#6b7280";
+                e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+              }}
+            >
+              View Feedback (Admin)
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Admin Login Modal */}
+      {showAdminModal && (
+        <div style={styles.modalOverlay} onClick={closeAdminModal}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>Admin Login</h3>
+              <button
+                onClick={closeAdminModal}
+                style={styles.closeBtn}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "#f3f4f6";
+                  e.currentTarget.style.color = "#1f2937";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                  e.currentTarget.style.color = "#9ca3af";
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={styles.modalBody}>
+              <p style={styles.modalSubtitle}>
+                Please enter your admin credentials to access the feedback dashboard.
+              </p>
+
+              {adminError && (
+                <div style={styles.errorMessage}>
+                  {adminError}
+                </div>
+              )}
+
+              <form onSubmit={handleAdminLogin}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Admin Username</label>
+                  <input
+                    type="text"
+                    value={adminUsername}
+                    onChange={(e) => setAdminUsername(e.target.value)}
+                    placeholder="Enter admin username"
+                    required
+                    disabled={adminLoading}
+                    style={styles.input}
+                    onFocus={(e) => {
+                      e.currentTarget.style.outline = "2px solid #3b82f6";
+                      e.currentTarget.style.outlineOffset = "0px";
+                      e.currentTarget.style.borderColor = "#3b82f6";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.outline = "none";
+                      e.currentTarget.style.borderColor = "#d1d5db";
+                    }}
+                  />
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Admin Password</label>
+                  <input
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    disabled={adminLoading}
+                    style={styles.input}
+                    onFocus={(e) => {
+                      e.currentTarget.style.outline = "2px solid #3b82f6";
+                      e.currentTarget.style.outlineOffset = "0px";
+                      e.currentTarget.style.borderColor = "#3b82f6";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.outline = "none";
+                      e.currentTarget.style.borderColor = "#d1d5db";
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={adminLoading}
+                  style={{
+                    ...styles.loginBtn,
+                    opacity: adminLoading ? 0.6 : 1,
+                    cursor: adminLoading ? "not-allowed" : "pointer",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!adminLoading) {
+                      e.currentTarget.style.backgroundColor = "#2563eb";
+                      e.currentTarget.style.boxShadow = "0 4px 6px rgba(59,130,246,0.3)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!adminLoading) {
+                      e.currentTarget.style.backgroundColor = "#3b82f6";
+                      e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                    }
+                  }}
+                >
+                  {adminLoading ? "Verifying..." : "Login as Admin"}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
