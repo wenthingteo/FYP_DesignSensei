@@ -104,58 +104,105 @@ class ChatbotAPIView(APIView):
 
     async def _process_message_async(self, message_text, session_id, conversation_context):
         """
-        Async wrapper for the LLM processing with timeout
+        Async LLM processing:
+        - Intent classification
+        - GraphRAG graph search
+        - Fallback if graph not useful
+        - Main answer generation
+        - Stronger hallucination protection
         """
         try:
-            # Intent classification & Graph Search
-            initial_intent_result = self.prompt_manager.intent_classifier.classify_intent(user_query=message_text)
-            search_parameters = self.prompt_manager.intent_classifier.get_search_parameters(
+            # ---------------------------------------------------------
+            # 1. INTENT CLASSIFICATION (fast, synchronous)
+            # ---------------------------------------------------------
+            intent = self.prompt_manager.intent_classifier.classify_intent(
+                user_query=message_text
+            )
+            search_params = self.prompt_manager.intent_classifier.get_search_parameters(
                 user_query=message_text,
-                intent=initial_intent_result
+                intent=intent
             )
 
+            # ---------------------------------------------------------
+            # 2. GRAPH SEARCH (GraphRAG)
+            # ---------------------------------------------------------
             graphrag_results = {'results': []}
+            graph_results_list = []
+
             if self.graph_search_service:
-                logger.info(f"ChatbotAPIView: Calling GraphSearchService for '{message_text}' with params: {search_parameters}")
+                logger.info(f"[GraphRAG] Searching with params: {search_params}")
+
                 graphrag_results = self.graph_search_service.search(
                     user_query_text=message_text,
-                    search_params=search_parameters,
+                    search_params=search_params,
                     session_id=session_id
                 )
-                logger.info(f"ChatbotAPIView: Received {len(graphrag_results.get('results', []))} results from GraphSearchService.")
-            else:
-                logger.warning("ChatbotAPIView: GraphSearchService not available. Proceeding without GraphRAG results.")
 
-            # --- Handle fallback: if graph returns nothing or too weak ---
-            graph_results_list = graphrag_results.get('results', [])
-            if not graph_results_list or len(graph_results_list) == 0:
-                logger.info("No relevant graph results — switching to general LLM response.")
-                general_prompt = (
-                    "You are DesignSensei, an AI assistant for software design students. "
-                    "If the user's question is not related to software design, respond naturally and helpfully like a friendly AI."
+                graph_results_list = graphrag_results.get("results", [])
+                logger.info(f"[GraphRAG] Received {len(graph_results_list)} results")
+
+            # ---------------------------------------------------------
+            # 3. GRAPH QUALITY CHECK (decide fallback)
+            # ---------------------------------------------------------
+            fallback_reason = None
+
+            if not graph_results_list:
+                fallback_reason = "No graph results"
+            else:
+                # Threshold: at least 1 result with combined relevance > 0.30
+                high_quality_count = sum(
+                    1 for r in graph_results_list
+                    if r.get("combined_score", 0.0) >= 0.30
                 )
 
-                # ✅ Initialize OpenAI client directly (not through PromptManager)
+                if high_quality_count == 0:
+                    fallback_reason = "Graph results too weak"
+
+            # ---------------------------------------------------------
+            # 4. FALLBACK IF GRAPH IS EMPTY OR TOO WEAK
+            # ---------------------------------------------------------
+            if fallback_reason:
+                logger.info(f"[FALLBACK] Triggered: {fallback_reason}")
+
+                system_prompt = (
+                    "You are DesignSensei, an AI tutor specializing in software design.\n"
+                    "If the question is outside software design, still answer naturally.\n"
+                    "Provide clear, factual, minimal hallucination responses.\n"
+                    "If unsure, say 'I might be mistaken' and recommend verification."
+                )
+
                 from openai import OpenAI
                 import os
+
                 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
                 fallback_response = client.chat.completions.create(
                     model="gpt-4.1-nano-2025-04-14",
                     messages=[
-                        {"role": "system", "content": general_prompt},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": message_text}
                     ],
-                    max_tokens=300,
-                    temperature=0.7
+                    max_tokens=350,
+                    temperature=0.2
                 )
 
                 answer = fallback_response.choices[0].message.content.strip()
 
-                logger.info("✅ Fallback mode triggered — returned general LLM response.")
-                return {"response": answer, "metadata": {"mode": "fallback"}}, graphrag_results
+                return (
+                    {
+                        "response": answer,
+                        "metadata": {
+                            "mode": "fallback",
+                            "intent": intent,
+                            "fallback_reason": fallback_reason
+                        }
+                    },
+                    graphrag_results
+                )
 
-            # --- Process query and generate response (normal GraphRAG mode) ---
+            # ---------------------------------------------------------
+            # 5. NORMAL GRAPH-ASSISTED RESPONSE MODE
+            # ---------------------------------------------------------
             user_expertise = UserExpertise.INTERMEDIATE
             response_length = ResponseLength.MEDIUM
 
@@ -166,11 +213,19 @@ class ChatbotAPIView(APIView):
                 user_expertise=user_expertise,
                 response_length=response_length
             )
-            
+
+            # Ensure structure always consistent
+            if "response" not in processed_result:
+                processed_result["response"] = "(Error: No response generated.)"
+
+            processed_result.setdefault("metadata", {})
+            processed_result["metadata"]["mode"] = "graphrag"
+            processed_result["metadata"]["intent"] = intent
+
             return processed_result, graphrag_results
 
         except Exception as e:
-            logger.error(f"ChatbotAPIView: Error during async processing: {e}", exc_info=True)
+            logger.error(f"[ERROR] During async message processing: {e}", exc_info=True)
             raise
 
     def post(self, request):
@@ -216,12 +271,8 @@ class ChatbotAPIView(APIView):
         # 2. Handle normal message OR regenerate flow
         # ------------------------------------------------------------------
         if is_regenerate:
-            # -----------------------------------------
-            # REGENERATE: find original user message
-            # -----------------------------------------
             user_message = None
 
-            # Priority 1: a specific message_id
             if regenerate_message_id:
                 user_message = Message.objects.filter(
                     id=regenerate_message_id,
@@ -229,7 +280,6 @@ class ChatbotAPIView(APIView):
                     sender="user"
                 ).first()
 
-            # Priority 2: match by content
             if user_message is None:
                 user_message = Message.objects.filter(
                     conversation=conversation,
@@ -237,7 +287,6 @@ class ChatbotAPIView(APIView):
                     content=message_text
                 ).order_by("-created_at").first()
 
-            # Priority 3: recreate if truly missing
             if user_message is None:
                 user_message = Message.objects.create(
                     conversation=conversation,
@@ -246,7 +295,6 @@ class ChatbotAPIView(APIView):
                     created_at=timezone.now(),
                     metadata={"regenerated": True},
                 )
-                # Add newly created msg to context
                 self.context_manager.add_message(
                     session_id=session_id,
                     role="user",
@@ -254,7 +302,6 @@ class ChatbotAPIView(APIView):
                     metadata=user_message.metadata,
                 )
             else:
-                # Ensure context contains the original message
                 ctx = self.context_manager.get_context(session_id)
                 if not any(m.get("role") == "user" and m.get("content") == user_message.content for m in ctx):
                     self.context_manager.add_message(
@@ -264,7 +311,6 @@ class ChatbotAPIView(APIView):
                         metadata=user_message.metadata,
                     )
 
-            # Mark previous bot reply as superseded
             try:
                 last_bot = Message.objects.filter(
                     conversation=conversation,
@@ -275,14 +321,10 @@ class ChatbotAPIView(APIView):
                 if last_bot:
                     last_bot.metadata = {**(last_bot.metadata or {}), "superseded_by_regen": True}
                     last_bot.save(update_fields=["metadata"])
-
             except Exception:
                 pass
 
         else:
-            # ---------------------------
-            # NORMAL CHAT MESSAGE
-            # ---------------------------
             user_message = Message.objects.create(
                 conversation=conversation,
                 sender="user",
@@ -337,28 +379,24 @@ class ChatbotAPIView(APIView):
                 "user_message": MessageSerializer(user_message).data,
             }, status=500)
 
-        # Extract AI draft
         draft_answer = processed_result.get("response", "")
         context_text = str(graphrag_results.get("results", []))
 
         # ------------------------------------------------------------------
-        # 4. Evaluate BEFORE sending (hybrid score + RAGAS factuality)
+        # 4. NEW RAGAS EVALUATION PIPELINE (correct for ragas 0.3.9)
         # ------------------------------------------------------------------
         eval_service = EvaluationService()
 
-        final_answer, score, attempts = eval_service.evaluate_before_send(
+        # NEW: evaluation now returns final_answer directly
+        final_answer = eval_service.evaluate_before_send(
             question=message_text,
             context=context_text,
-            draft_answer=draft_answer,
-            max_attempts=3,
-            threshold=0.7
+            llm_answer=draft_answer
         )
 
         ai_response_text = final_answer
 
-        # ------------------------------------------------------------------
-        # 5. Save evaluation asynchronously
-        # ------------------------------------------------------------------
+        # Save evaluation asynchronously (store scores)
         try:
             eval_service.evaluate_and_store_async(
                 session_id=session_id,
