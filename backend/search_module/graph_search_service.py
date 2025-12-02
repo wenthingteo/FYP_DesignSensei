@@ -92,7 +92,7 @@ class GraphSearchService:
                     logger.info(f"Processed results count: {len(processed_results)}")
                     
                     # Apply minimum relevance score filter
-                    min_score = min_relevance_score if attempt == 0 else 0.3
+                    min_score = 0.35
                     final_results = [
                         res for res in processed_results 
                         if res.get('relevance_score', 0.0) >= min_score
@@ -224,80 +224,71 @@ class GraphSearchService:
 
     def _process_neo4j_results(self, raw_results: List[Dict], user_query_embedding: Optional[List[float]]) -> List[Dict]:
         """
-        Process Neo4j results - calculate vector similarity in Python (NO GDS needed!)
+        Clean + stable scoring for GraphRAG.
+        - Normalized FTS
+        - Normalized semantic similarity
+        - Combined final relevance score
         """
-        processed_data = []
-        
-        for i, record in enumerate(raw_results):
+        processed = []
+
+        for record in raw_results:
             try:
-                node_data = record.get("n")
-                if not node_data:
+                node = record.get("n")
+                if not node:
                     continue
-                
-                # Handle Neo4j Node objects
-                if hasattr(node_data, 'element_id'):
-                    node_dict = dict(node_data)
-                    node_dict['__id__'] = str(node_data.element_id)
-                    node_dict['__labels__'] = list(node_data.labels)
+
+                # Convert Neo4j node object into dict
+                if hasattr(node, "element_id"):
+                    node_dict = dict(node)
+                    node_dict["__labels__"] = list(node.labels)
                 else:
-                    node_dict = node_data
-                
-                # Get FTS score from Neo4j
-                fts_score = float(record.get("fts_score", 0.0))
-                
-                # Calculate vector similarity in Python using your existing method
-                semantic_score = 0.0
+                    node_dict = node
+
+                # -----------------------------
+                # Extract partial scores
+                # -----------------------------
+                fts = float(record.get("fts_score", 0.0))
                 node_embedding = record.get("node_embedding")
-                
-                if user_query_embedding and node_embedding:
-                    if isinstance(node_embedding, list) and len(node_embedding) > 0:
-                        try:
-                            # This uses YOUR existing _cosine_similarity method - no GDS!
-                            semantic_score = self._cosine_similarity(user_query_embedding, node_embedding)
-                            logger.debug(f"Node '{node_dict.get('name', 'Unknown')}': FTS={fts_score:.3f}, Vector={semantic_score:.3f}")
-                        except Exception as e:
-                            logger.error(f"Error calculating cosine similarity: {e}")
-                            semantic_score = 0.0
-                
-                # Combine: 30% text matching + 70% semantic similarity
-                combined_score = (fts_score * 0.3 + semantic_score * 0.7)
-                
-                node_result = {
+
+                # Normalize FTS to 0–1
+                # your current FTS is between 0.5 and 1.0
+                fts_norm = (fts - 0.5) / (1.0 - 0.5)
+                fts_norm = max(0.0, min(fts_norm, 1.0))
+
+                # Compute semantic similarity
+                semantic = 0.0
+                if user_query_embedding and isinstance(node_embedding, list):
+                    try:
+                        semantic = self._cosine_similarity(user_query_embedding, node_embedding)
+                    except:
+                        semantic = 0.0
+
+                # Normalize semantic 0–1 (cosine range = -1 → 1)
+                semantic_norm = (semantic + 1.0) / 2.0
+
+                # -----------------------------
+                # Final Combined Score
+                # -----------------------------
+                combined_score = (0.6 * fts_norm) + (0.4 * semantic_norm)
+
+                processed.append({
                     "name": node_dict.get("name", "Unknown"),
                     "description": node_dict.get("description", "No description"),
                     "domain": node_dict.get("domain", ""),
-                    "labels": node_dict.get('__labels__', []),
-                    "fts_score": round(fts_score, 3),
-                    "semantic_score": round(semantic_score, 3),
+                    "labels": node_dict.get("__labels__", []),
+                    "fts_score": round(fts, 3),
+                    "semantic_score": round(semantic, 3),
                     "relevance_score": round(combined_score, 3),
-                    "relationships": record.get("relationships", []),
-                    "reverse_relationships": record.get("reverse_relationships", [])
-                }
-                
-                processed_data.append(node_result)
-                
+                })
+
             except Exception as e:
-                logger.error(f"Error processing record {i}: {e}", exc_info=True)
-                continue
-        
-        # Sort by relevance score
-        sorted_results = sorted(processed_data, key=lambda x: x['relevance_score'], reverse=True)
-        
-        # Log top results
-        if sorted_results:
-            logger.info("Top 3 results after vector similarity:")
-            for i, result in enumerate(sorted_results[:3], 1):
-                logger.info(
-                    f"  {i}. {result['name']}: FTS={result['fts_score']}, "
-                    f"Vector={result['semantic_score']}, Combined={result['relevance_score']}"
-                )
+                logger.error(f"Error processing result: {e}")
 
-        # ✅ Add semantic similarity threshold filter here
-        if not sorted_results or all(r['relevance_score'] < 0.25 for r in sorted_results):
-            logger.warning("Low semantic similarity (<0.25) — skipping graph and switching to general LLM mode.")
-            return []  # force fallback
+        # Sort highest first
+        processed.sort(key=lambda x: x["relevance_score"], reverse=True)
 
-        return sorted_results
+        # Remove extremely low-confidence results
+        return [p for p in processed if p["relevance_score"] >= 0.35]
 
     def search_with_fallback(self, user_query_text: str, search_params: Dict, session_id: str) -> Dict:
         """
