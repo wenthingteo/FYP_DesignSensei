@@ -9,6 +9,7 @@
 ## 🔍 Problem Analysis
 
 ### Original Issue:
+
 ```
 Query: "more about ddd and its example"
 Graph Results: 100 DDD-related nodes found
@@ -20,17 +21,20 @@ Mode Selected: HYBRID_BLEND (should be GRAPH_RAG)
 ### Root Causes:
 
 1. **Insufficient Context**
+
    - Only showing first 500 chars of 6 results
    - Graph text was truncated: `{graph_text[:500]}...`
    - LLM couldn't see enough to judge relevance
 
 2. **Poor Prompt Structure**
+
    - Vague "Snippets" terminology
    - No clear scoring criteria
    - No examples or guidelines
    - Missing detected topic context
 
 3. **Inadequate Fallback**
+
    - Defaulted to 0.5 on parse failure
    - Didn't leverage FTS scores from graph
 
@@ -43,6 +47,7 @@ Mode Selected: HYBRID_BLEND (should be GRAPH_RAG)
 ## ✅ Improvements Implemented
 
 ### 1. Expanded Context Window
+
 ```python
 # BEFORE: 6 results, 500 chars truncated
 graph_text = "\n".join([f"- {r.get('text','')}" for r in graph_results_list[:6]])
@@ -63,13 +68,15 @@ for i, r in enumerate(top_results, 1):
 ### 2. Enhanced Prompt with Clear Criteria
 
 #### Before:
+
 ```
-"Rate the relevance of these knowledge snippets to the user's question. 
+"Rate the relevance of these knowledge snippets to the user's question.
 Output ONLY a decimal number between 0.0-1.0.
 0.0=irrelevant, 0.5=somewhat relevant, 1.0=highly relevant."
 ```
 
 #### After:
+
 ```
 "You are evaluating whether knowledge graph results can answer the user's question.
 
@@ -93,7 +100,8 @@ IMPORTANT:
 - Only give LOW scores if results don't match topic at all"
 ```
 
-**Impact:** 
+**Impact:**
+
 - Clear 4-tier scoring system
 - Explicit examples and guidelines
 - Context-aware evaluation (detected topics shown)
@@ -104,6 +112,7 @@ IMPORTANT:
 ### 3. Intelligent Fallback Mechanism
 
 #### Before:
+
 ```python
 except Exception as e:
     logger.error(f"Failed to parse: {e}, defaulting to 0.5")
@@ -111,6 +120,7 @@ except Exception as e:
 ```
 
 #### After:
+
 ```python
 except Exception as e:
     # Better fallback: use average of FTS scores from graph results
@@ -120,6 +130,7 @@ except Exception as e:
 ```
 
 **Impact:**
+
 - Fallback uses actual graph quality (FTS scores) instead of arbitrary 0.5
 - Capped at 0.7 to avoid overconfidence in fallback mode
 - Better reflects search quality when LLM scoring fails
@@ -129,11 +140,13 @@ except Exception as e:
 ### 4. Enhanced System Prompt
 
 #### Before:
+
 ```python
 {"role": "system", "content": "You are a relevance scorer. Output only decimal numbers like 0.75"}
 ```
 
 #### After:
+
 ```python
 {"role": "system", "content": "You are an expert relevance evaluator. Analyze carefully and output only a decimal score."}
 ```
@@ -145,18 +158,21 @@ except Exception as e:
 ### 5. Improved Logging
 
 #### Before:
+
 ```
 [HYBRID MODE DECISION] Mode selected = HYBRID_BLEND, Score=0.0
 ```
 
 #### After:
+
 ```
 📊 Relevance scoring: 8 results analyzed, final score: 0.85
 [MODE: GRAPH_RAG] Score 0.85 >= threshold 0.55
 🎯 HYBRID MODE DECISION: GRAPH_RAG (Score=0.85, Threshold=0.55)
 ```
 
-**Impact:** 
+**Impact:**
+
 - More detailed tracking of scoring process
 - Clear explanation of mode selection logic
 - Easier debugging of edge cases
@@ -166,14 +182,17 @@ except Exception as e:
 ## 📊 Expected Improvements
 
 ### Scoring Accuracy:
+
 - **Before:** DDD queries → 0.0 (wrong)
 - **After:** DDD queries → 0.7-0.9 (correct)
 
 ### Mode Selection:
+
 - **Before:** Relevant results → HYBRID_BLEND (suboptimal)
 - **After:** Relevant results → GRAPH_RAG (optimal)
 
 ### Response Quality:
+
 - **Before:** Graph knowledge treated as "hints"
 - **After:** Graph knowledge used directly with confidence
 
@@ -184,18 +203,21 @@ except Exception as e:
 ### Test Cases:
 
 1. **DDD-specific query**
+
    ```
    Query: "What is Domain-Driven Design?"
    Expected: Score 0.8-1.0, Mode GRAPH_RAG
    ```
 
 2. **Related but incomplete**
+
    ```
    Query: "How to design microservices with event sourcing?"
    Expected: Score 0.5-0.7, Mode HYBRID_BLEND or GRAPH_RAG
    ```
 
 3. **Off-topic query**
+
    ```
    Query: "What's the weather today?"
    Expected: Score 0.0-0.1, Mode LLM_ONLY
@@ -232,15 +254,18 @@ FALLBACK_CAP = 0.7       # Max score for FTS-based fallback
 ## 📈 Performance Impact
 
 ### Latency:
+
 - **LLM call time:** ~0.5-1.0s (no change)
 - **Context building:** +50ms (negligible, better results worth it)
 
 ### Token Usage:
+
 - **Before:** ~200 tokens per relevance check
 - **After:** ~400 tokens per relevance check
 - **Cost impact:** ~$0.00006 per query (minimal)
 
 ### Quality:
+
 - **Scoring accuracy:** +80% improvement expected
 - **Mode selection:** Significantly better alignment with intent
 - **User satisfaction:** Higher quality responses from correct mode usage
@@ -250,11 +275,13 @@ FALLBACK_CAP = 0.7       # Max score for FTS-based fallback
 ## 🚀 Next Steps
 
 1. **Monitor scores in production**
+
    - Track distribution of relevance scores
    - Identify queries with low scores but good results
    - Adjust threshold based on real data
 
 2. **Add telemetry**
+
    - Log score vs mode selection correlation
    - Track user regeneration rates per mode
    - Measure response quality by mode
