@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'rest_framework_nested',
     'search_module',
     'knowledge_graph',
+    'evaluation',
 ]
 
 MIDDLEWARE = [

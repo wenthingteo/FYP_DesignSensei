@@ -14,11 +14,11 @@ class ConversationSerializer(serializers.ModelSerializer):
         fields = ['id', 'user', 'title', 'created_at', 'messages', 'updated_at']
 
 # kerry evaluation part
-from .models import EvaluationResult, GroundTruth
+from .models import EvaluationRecord, GroundTruth
 
 class EvaluationResultSerializer(serializers.ModelSerializer):
     class Meta:
-        model = EvaluationResult
+        model = EvaluationRecord
         fields = '__all__'
 
 

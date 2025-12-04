@@ -130,97 +130,205 @@ class ChatbotAPIView(APIView):
             graph_results_list = []
 
             if self.graph_search_service:
-                logger.info(f"[GraphRAG] Searching with params: {search_params}")
+                try:
+                    logger.info(f"[GraphRAG] Searching with params: {search_params}")
 
-                graphrag_results = self.graph_search_service.search(
-                    user_query_text=message_text,
-                    search_params=search_params,
-                    session_id=session_id
+                    graphrag_results = self.graph_search_service.search(
+                        user_query_text=message_text,
+                        search_params=search_params,
+                        session_id=session_id
+                    )
+
+                    graph_results_list = graphrag_results.get("results", [])
+                    logger.info(f"[GraphRAG] ✅ Received {len(graph_results_list)} results")
+                    
+                    if len(graph_results_list) == 0:
+                        logger.warning(f"[GraphRAG] ⚠️ No results found for query: '{message_text[:50]}...'")
+                except Exception as e:
+                    logger.error(f"[GraphRAG] ❌ Search error: {e}", exc_info=True)
+
+            # ---------------------------------------------------------
+            # 3. HYBRID MODE — Evaluate Graph Quality using LLM Score
+            # ---------------------------------------------------------
+            HYBRID_THRESHOLD = 0.55  # score required to rely on graph primarily
+            llm_relevance_score = 0.0
+
+            if graph_results_list:
+                # Build structured summary with top results (more context, better formatting)
+                top_results = graph_results_list[:8]  # Increased from 6 to 8
+                
+                # Extract detected topics for context
+                detected_topics = search_params.get('topic_filter_labels', [])[:3]
+                topic_context = f"Detected topics: {', '.join(detected_topics)}" if detected_topics else ""
+                
+                # Format results with clear structure (name + description, not full text)
+                formatted_results = []
+                for i, r in enumerate(top_results, 1):
+                    name = r.get('name', 'Unknown')
+                    desc = r.get('description', r.get('text', ''))[:200]  # First 200 chars
+                    formatted_results.append(f"{i}. {name}: {desc}")
+                
+                knowledge_summary = "\n".join(formatted_results)
+
+                # Improved scoring prompt with clear criteria and examples
+                scoring_prompt = (
+                    "You are evaluating whether knowledge graph results can answer the user's question.\n\n"
+                    f"USER QUESTION: \"{message_text}\"\n"
+                    f"{topic_context}\n\n"
+                    "KNOWLEDGE GRAPH RESULTS:\n"
+                    f"{knowledge_summary}\n\n"
+                    "SCORING CRITERIA:\n"
+                    "• 0.8-1.0: Results directly answer the question with detailed, relevant information\n"
+                    "• 0.5-0.7: Results contain related concepts but lack completeness\n"
+                    "• 0.2-0.4: Results are tangentially related but don't address the question\n"
+                    "• 0.0-0.1: Results are irrelevant or off-topic\n\n"
+                    "IMPORTANT:\n"
+                    "- If question asks about 'DDD' and results contain DDD concepts → HIGH score (0.7-1.0)\n"
+                    "- If results provide definitions, examples, or explanations for the asked topic → HIGH score\n"
+                    "- Only give LOW scores if results don't match the question topic at all\n\n"
+                    "Output ONLY a single decimal number (e.g., 0.85):"
                 )
 
-                graph_results_list = graphrag_results.get("results", [])
-                logger.info(f"[GraphRAG] Received {len(graph_results_list)} results")
+                relevance_response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are an expert relevance evaluator. Analyze carefully and output only a decimal score."},
+                        {"role": "user", "content": scoring_prompt}
+                    ],
+                    max_tokens=10,
+                    temperature=0
+                )
+
+                try:
+                    raw_score = relevance_response.choices[0].message.content.strip()
+                    logger.info(f"🔍 LLM raw relevance response: '{raw_score}'")
+                    
+                    # Extract first number found in response
+                    import re
+                    match = re.search(r'0\.[0-9]+|1\.0+|0\.0+', raw_score)
+                    if match:
+                        llm_relevance_score = float(match.group())
+                        logger.info(f"✅ Extracted LLM relevance score: {llm_relevance_score}")
+                    else:
+                        # Fallback: calculate based on FTS scores if available
+                        avg_fts = sum(r.get('fts_score', 0.5) for r in top_results) / len(top_results)
+                        llm_relevance_score = min(0.7, avg_fts)  # Cap at 0.7 for fallback
+                        logger.warning(f"⚠️ No number found in LLM response, using FTS average: {llm_relevance_score:.2f}")
+                except Exception as e:
+                    # Better fallback: use average of FTS scores from graph results
+                    avg_fts = sum(r.get('fts_score', 0.5) for r in top_results) / len(top_results)
+                    llm_relevance_score = min(0.7, avg_fts)
+                    logger.error(f"❌ Failed to parse LLM relevance score: {e}, using FTS average: {llm_relevance_score:.2f}")
+
+                graphrag_results["average_llm_score"] = llm_relevance_score
+                logger.info(f"📊 Relevance scoring: {len(top_results)} results analyzed, final score: {llm_relevance_score:.2f}")
 
             # ---------------------------------------------------------
-            # 3. GRAPH QUALITY CHECK (decide fallback)
+            # 4. HYBRID ROUTING: Decide LLM only / Blend / Graph Mode
             # ---------------------------------------------------------
-            fallback_reason = None
-
             if not graph_results_list:
-                fallback_reason = "No graph results"
+                mode = "LLM_ONLY"
+                logger.info(f"[MODE: LLM_ONLY] No graph results available")
+            elif llm_relevance_score < HYBRID_THRESHOLD:
+                mode = "HYBRID_BLEND"
+                logger.info(f"[MODE: HYBRID_BLEND] Score {llm_relevance_score:.2f} < threshold {HYBRID_THRESHOLD}")
             else:
-                # Threshold: at least 1 result with combined relevance > 0.30
-                high_quality_count = sum(
-                    1 for r in graph_results_list
-                    if r.get("combined_score", 0.0) >= 0.30
-                )
+                mode = "GRAPH_RAG"
+                logger.info(f"[MODE: GRAPH_RAG] Score {llm_relevance_score:.2f} >= threshold {HYBRID_THRESHOLD}")
 
-                if high_quality_count == 0:
-                    fallback_reason = "Graph results too weak"
+            logger.info(f"🎯 HYBRID MODE DECISION: {mode} (Score={llm_relevance_score:.2f}, Threshold={HYBRID_THRESHOLD})")
 
-            # ---------------------------------------------------------
-            # 4. FALLBACK IF GRAPH IS EMPTY OR TOO WEAK
-            # ---------------------------------------------------------
-            if fallback_reason:
-                logger.info(f"[FALLBACK] Triggered: {fallback_reason}")
-
+            # ----------------- MODE: LLM ONLY -----------------------
+            if mode == "LLM_ONLY":
                 system_prompt = (
                     "You are DesignSensei, an AI tutor specializing in software design.\n"
-                    "If the question is outside software design, still answer naturally.\n"
-                    "Provide clear, factual, minimal hallucination responses.\n"
-                    "If unsure, say 'I might be mistaken' and recommend verification."
+                    "Provide clear, factual, concise responses.\n"
+                    "If unsure, say 'I might be mistaken.'\n"
+                    "IMPORTANT: Use the conversation history to understand context and references like 'it', 'that', 'this concept', etc."
                 )
 
-                from openai import OpenAI
-                import os
-
-                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                # Build conversation history for context
+                messages = [{"role": "system", "content": system_prompt}]
+                
+                # Add recent conversation history (last 3 exchanges)
+                if conversation_context and isinstance(conversation_context, dict):
+                    previous_messages = conversation_context.get('previous_messages', [])
+                    if previous_messages:
+                        recent_history = previous_messages[-6:]  # Last 3 user+assistant pairs
+                        for msg in recent_history:
+                            messages.append({
+                                "role": msg.get("role", "user"),
+                                "content": msg.get("content", "")
+                            })
+                
+                # Add current user message
+                messages.append({"role": "user", "content": message_text})
 
                 fallback_response = client.chat.completions.create(
                     model="gpt-4.1-nano-2025-04-14",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": message_text}
-                    ],
+                    messages=messages,
                     max_tokens=350,
                     temperature=0.2
                 )
-
                 answer = fallback_response.choices[0].message.content.strip()
-
                 return (
-                    {
-                        "response": answer,
-                        "metadata": {
-                            "mode": "fallback",
-                            "intent": intent,
-                            "fallback_reason": fallback_reason
-                        }
-                    },
+                    {"response": answer, "metadata": {"mode": mode, "score": llm_relevance_score, "intent": intent}},
                     graphrag_results
                 )
 
-            # ---------------------------------------------------------
-            # 5. NORMAL GRAPH-ASSISTED RESPONSE MODE
-            # ---------------------------------------------------------
-            user_expertise = UserExpertise.INTERMEDIATE
-            response_length = ResponseLength.MEDIUM
+            # ----------------- MODE: HYBRID BLEND (LLM + graph summary) -----------------------
+            if mode == "HYBRID_BLEND":
+                graph_summary = "\n".join([f"- {r.get('text', '')}" for r in graph_results_list[:4]])
 
+                blend_prompt = (
+                    "You are DesignSensei, an AI tutor specializing in software design.\n"
+                    "Below is partial but not fully confident knowledge graph info. "
+                    "Use it ONLY as supporting hints.\n\n"
+                    f"Graph Insights:\n{graph_summary}\n\n"
+                    "Answer the user's question clearly.\n"
+                    "IMPORTANT: Use conversation history to understand references like 'it', 'that', 'this', etc."
+                )
+
+                # Build messages with conversation history
+                messages = [{"role": "system", "content": blend_prompt}]
+                
+                # Add recent conversation history
+                if conversation_context and isinstance(conversation_context, dict):
+                    previous_messages = conversation_context.get('previous_messages', [])
+                    if previous_messages:
+                        recent_history = previous_messages[-6:]  # Last 3 exchanges
+                        for msg in recent_history:
+                            messages.append({
+                                "role": msg.get("role", "user"),
+                                "content": msg.get("content", "")
+                            })
+                
+                messages.append({"role": "user", "content": message_text})
+
+                hybrid_response = client.chat.completions.create(
+                    model="gpt-4.1-nano-2025-04-14",
+                    messages=messages,
+                    max_tokens=380,
+                    temperature=0.25
+                )
+
+                answer = hybrid_response.choices[0].message.content.strip()
+                return (
+                    {"response": answer, "metadata": {"mode": mode, "score": llm_relevance_score, "intent": intent}},
+                    graphrag_results
+                )
+
+            # ----------------- MODE: GRAPH RAG (strong results) -----------------------
             processed_result = self.prompt_manager.process_query(
                 user_query=message_text,
                 graphrag_results=graphrag_results,
                 conversation_context=conversation_context,
-                user_expertise=user_expertise,
-                response_length=response_length
+                user_expertise=UserExpertise.INTERMEDIATE,
+                response_length=ResponseLength.MEDIUM
             )
 
-            # Ensure structure always consistent
-            if "response" not in processed_result:
-                processed_result["response"] = "(Error: No response generated.)"
-
             processed_result.setdefault("metadata", {})
-            processed_result["metadata"]["mode"] = "graphrag"
-            processed_result["metadata"]["intent"] = intent
+            processed_result["metadata"].update({"mode": mode, "score": llm_relevance_score, "intent": intent})
 
             return processed_result, graphrag_results
 
@@ -387,23 +495,18 @@ class ChatbotAPIView(APIView):
         # ------------------------------------------------------------------
         eval_service = EvaluationService()
 
-        # NEW: evaluation now returns final_answer directly
-        final_answer = eval_service.evaluate_before_send(
-            question=message_text,
-            context=context_text,
-            llm_answer=draft_answer
-        )
+        # Extract final answer from processed_result
+        final_answer = processed_result.get("response", "")
+        hybrid_mode = processed_result.get("metadata", {}).get("mode", "UNKNOWN")
 
-        ai_response_text = final_answer
-
-        # Save evaluation asynchronously (store scores)
+        # Save evaluation asynchronously
         try:
             eval_service.evaluate_and_store_async(
                 session_id=session_id,
-                user_id=request.user.id,
-                question=message_text,
-                context=context_text,
-                llm_answer=ai_response_text
+                user_query=message_text,
+                response_text=final_answer,
+                graph_data=graphrag_results,
+                metadata={"hybrid_mode": hybrid_mode}
             )
         except Exception as e:
             logger.error("Eval async save error: %s", e)
@@ -422,7 +525,7 @@ class ChatbotAPIView(APIView):
         ai_message = Message.objects.create(
             conversation=conversation,
             sender="bot",
-            content=ai_response_text,
+            content=final_answer,
             created_at=timezone.now(),
             metadata=ai_metadata,
         )
@@ -430,7 +533,7 @@ class ChatbotAPIView(APIView):
         self.context_manager.add_message(
             session_id=session_id,
             role="assistant",
-            content=ai_response_text,
+            content=final_answer,
             metadata=ai_metadata,
         )
 

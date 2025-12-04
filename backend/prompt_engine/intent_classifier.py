@@ -1,138 +1,156 @@
+# intent_classifier.py (patched to match your real Neo4j labels)
 import re
-from typing import Dict, List
+from typing import Dict, List, Tuple, Optional
+from enum import Enum
 import logging
 
 logger = logging.getLogger(__name__)
 
-
-class QuestionType:
-    CONCEPT = "concept"
-    DEFINITION = "definition"
+class QuestionType(Enum):
+    EXPLANATION = "explanation"
     COMPARISON = "comparison"
-    HOW_TO = "how_to"
-    EXAMPLE = "example"
-    DIAGRAM = "diagram"
+    APPLICATION = "application"
+    ANALYSIS = "analysis"
+    TROUBLESHOOTING = "troubleshooting"
     GREETING = "greeting"
-    OUT_OF_SCOPE_GENERAL = "general"
+    OUT_OF_SCOPE_GENERAL = "out_of_scope_general"
+    UNKNOWN = "unknown"
 
+class SoftwareDesignTopic(Enum):
+    DESIGN_PATTERNS = "design_patterns"
+    SOLID_PRINCIPLES = "solid_principles"
+    ARCHITECTURE = "architecture"
+    DDD = "ddd"
+    QUALITY = "quality"
+    CODE_STRUCTURE = "code_structure"
+    GENERAL = "general_software_design"
 
 class IntentClassifier:
-
     def __init__(self):
-        # Map common software design terms → graph labels
-        self.topic_mapping = {
-            "uml": "UML",
-            "class diagram": "UML",
-            "sequence diagram": "UML",
-            "use case": "UML",
-            "use-case": "UML",
-            "design pattern": "DesignPattern",
-            "singleton": "DesignPattern",
-            "factory": "DesignPattern",
-            "observer": "DesignPattern",
-            "software architecture": "Architecture",
-            "architecture": "Architecture",
-            "mvc": "Architecture",
-            "layered": "Architecture",
-            "domain": "Domain",
-            "requirement": "Requirement",
-            "srp": "SOLID",
-            "solid": "SOLID",
-            "ocp": "SOLID",
-            "lsp": "SOLID",
-            "dip": "SOLID",
-            "isp": "SOLID",
+
+        # 🔹 Better pattern detection
+        self.question_patterns = {
+            QuestionType.EXPLANATION: [r"\bwhat is\b", r"\bexplain\b", r"\bdefine\b", r"\bdescribe\b", r"\bhow does\b"],
+            QuestionType.COMPARISON: [r"\bdifference\b", r"\bcompare\b", r"\bvs\b", r"\bversus\b"],
+            QuestionType.APPLICATION: [r"\bhow to\b", r"\bexample\b", r"\buse\b", r"\bapply\b", r"\bimplement\b"],
+            QuestionType.ANALYSIS: [r"\banalyze\b", r"\bevaluate\b", r"\bpros\b", r"\bcons\b"],
+            QuestionType.TROUBLESHOOTING: [r"\bproblem\b", r"\berror\b", r"\bfix\b", r"\bnot working\b"],
+            QuestionType.GREETING: [r"^(hi|hello|hey)\b", r"\bhow are you\b"],
+            QuestionType.OUT_OF_SCOPE_GENERAL: [r"\bweather\b", r"\bjoke\b", r"\bcapital of\b", r"\bwho is\b"]
         }
 
-    # ----------------------------------------------------------
-    # 1. Main Entry
-    # ----------------------------------------------------------
-    def classify_intent(self, user_query: str) -> Dict:
-        text = user_query.lower().strip()
+        # 🔹 Topic detection keywords
+        self.topic_keywords = {
+            SoftwareDesignTopic.DESIGN_PATTERNS: [
+                "pattern", "singleton", "factory", "strategy", "decorator",
+                "observer", "builder", "adapter", "facade", "prototype", "command"
+            ],
+            SoftwareDesignTopic.SOLID_PRINCIPLES: [
+                "solid", "single responsibility", "open closed", "liskov",
+                "interface segregation", "dependency inversion"
+            ],
+            SoftwareDesignTopic.ARCHITECTURE: [
+                "architecture", "mvc", "microservices", "monolith", "layered",
+                "hexagonal", "clean architecture"
+            ],
+            SoftwareDesignTopic.DDD: [
+                "ddd", "domain driven", "aggregate", "value object", "entity", "repository"
+            ],
+            SoftwareDesignTopic.QUALITY: [
+                "quality", "scalability", "maintainability", "performance", 
+                "readability", "refactor"
+            ],
+            SoftwareDesignTopic.CODE_STRUCTURE: [
+                "structure", "class", "function", "module", "interface", "coupling", "cohesion"
+            ]
+        }
 
-        # Greetings / small talk
-        if re.match(r"^(hi|hello|hey|yo|sup|morning|evening)\b", text):
-            return {"question_type": QuestionType.GREETING}
+        # 🔥 CRITICAL PATCH — Match EXACT Neo4j Labels
+        self.topic_label_map = {
+            SoftwareDesignTopic.DESIGN_PATTERNS: [
+                "DesignPattern", "design_pattern", "design_patterns", "DesignTool", "AntiPattern", "anti_pattern"
+            ],
+            SoftwareDesignTopic.SOLID_PRINCIPLES: [
+                "solid_principle", "DesignPrinciple", "design_principle", "solide_principle", "SoftwarePrinciple"
+            ],
+            SoftwareDesignTopic.ARCHITECTURE: [
+                "Architecture", "architecture", "ArchPattern", "ArchitecturalPattern"
+            ],
+            SoftwareDesignTopic.DDD: [
+                "DDD", "DDDConcept", "DDDconcept", "DomainDrivenDesign", "domain_driven_design", "Entity", "entity"
+            ],
+            SoftwareDesignTopic.QUALITY: [
+                "Quality", "quality", "QualityAttribute"
+            ],
+            SoftwareDesignTopic.CODE_STRUCTURE: [
+                "CodeStructure", "code_structure", "Interface", "interface", "DataStructure"
+            ],
+            SoftwareDesignTopic.GENERAL: []
+        }
 
-        # Out of scope (non-software-design)
-        if self._is_out_of_scope(text):
-            return {"question_type": QuestionType.OUT_OF_SCOPE_GENERAL}
+    # ---------------- Main logic ----------------
 
-        # Determine question category
-        question_type = self._detect_question_type(text)
+    def classify_intent(self, user_query: str, graphrag_results: Optional[Dict] = None) -> Dict:
+        query = user_query.lower().strip()
 
-        # Extract concepts inside the sentence
-        extracted_concepts = self._extract_concepts(text)
+        for pattern in self.question_patterns[QuestionType.GREETING]:
+            if re.search(pattern, query):
+                return self._make_result(QuestionType.GREETING, SoftwareDesignTopic.GENERAL, 1.0, 1.0)
 
-        # Map text to topic label(s)
-        topic_labels = self._detect_topics(text)
+        for pattern in self.question_patterns[QuestionType.OUT_OF_SCOPE_GENERAL]:
+            if re.search(pattern, query):
+                return self._make_result(QuestionType.OUT_OF_SCOPE_GENERAL, SoftwareDesignTopic.GENERAL, 1.0, 1.0)
 
-        # Extract keywords for FTS
-        keywords = self._extract_keywords(text)
+        q_type, q_conf = self._classify_question_type(query)
+        topic, t_conf, keywords = self._classify_topic(query)
 
+        overall_conf = (q_conf + t_conf) / 2
+        return self._make_result(q_type, topic, q_conf, t_conf, keywords, overall_conf)
+
+    def _classify_question_type(self, query: str):
+        scores = {
+            qt: sum(bool(re.search(p, query)) for p in pats)
+            for qt, pats in self.question_patterns.items()
+            if qt not in [QuestionType.GREETING, QuestionType.OUT_OF_SCOPE_GENERAL]
+        }
+        if not any(scores.values()):
+            return QuestionType.EXPLANATION, 0.3
+        best = max(scores, key=scores.get)
+        conf = min(0.4 + 0.1 * scores[best], 1.0)
+        return best, conf
+
+    def _classify_topic(self, query: str):
+        found = {}
+        for topic, kws in self.topic_keywords.items():
+            matched = [kw for kw in kws if re.search(rf"\b{re.escape(kw)}\b", query)]
+            if matched:
+                found[topic] = matched
+        if not found:
+            return SoftwareDesignTopic.GENERAL, 0.2, []
+        top_topic = max(found, key=lambda t: len(found[t]))
+        conf = min(0.4 + 0.1 * len(found[top_topic]), 0.9)
+        return top_topic, conf, found[top_topic]
+
+    def _make_result(self, q_type, topic, q_conf, t_conf, keywords=None, overall=None):
         return {
-            "question_type": question_type,
-            "topic_filter_labels": topic_labels,
-            "extracted_concepts": extracted_concepts,
-            "keywords": keywords,
-            "search_depth": 2,
-            "relationship_types": ["RELATED_TO"],
-            "min_relevance_score": 0.35,
+            "question_type": q_type.value,
+            "topic": topic.value,
+            "question_confidence": q_conf,
+            "topic_confidence": t_conf,
+            "keywords_found": keywords or [],
+            "overall_confidence": overall or (q_conf + t_conf) / 2,
+            "topic_filter_labels": self.topic_label_map.get(topic, [])
         }
 
-    # ----------------------------------------------------------
-    # 2. Out-of-scope detection
-    # ----------------------------------------------------------
-    def _is_out_of_scope(self, text: str) -> bool:
-        software_design_terms = [
-            "design", "uml", "diagram", "pattern", "class", "sequence", "use case",
-            "architecture", "model", "solid", "flow", "component", "module"
-        ]
-
-        return not any(term in text for term in software_design_terms)
-
-    # ----------------------------------------------------------
-    # 3. Determine question category
-    # ----------------------------------------------------------
-    def _detect_question_type(self, text: str) -> str:
-        if any(x in text for x in ["what is", "define", "meaning of"]):
-            return QuestionType.DEFINITION
-        if any(x in text for x in ["how to", "how do i", "steps to", "explain how"]):
-            return QuestionType.HOW_TO
-        if any(x in text for x in ["compare", "difference between", "vs "]):
-            return QuestionType.COMPARISON
-        if any(x in text for x in ["example", "give me an example"]):
-            return QuestionType.EXAMPLE
-        if any(x in text for x in ["draw", "diagram", "uml"]):
-            return QuestionType.DIAGRAM
-
-        return QuestionType.CONCEPT
-
-    # ----------------------------------------------------------
-    # 4. Extract relevant concepts
-    # ----------------------------------------------------------
-    def _extract_concepts(self, text: str) -> List[str]:
-        # pick only meaningful nouns/phrases
-        candidates = re.findall(r"[a-zA-Z][a-zA-Z\s\-]{2,}", text)
-        blacklist = {"what", "define", "give", "example", "how", "why", "when", "between"}
-        return [c.strip() for c in candidates if c.strip() not in blacklist]
-
-    # ----------------------------------------------------------
-    # 5. Map user text to topic labels (graph nodes)
-    # ----------------------------------------------------------
-    def _detect_topics(self, text: str) -> List[str]:
-        labels = []
-        for key, label in self.topic_mapping.items():
-            if key in text:
-                labels.append(label)
-
-        # fallback — if no topic detected, treat as general design question
-        return labels if labels else ["General"]
-
-    # ----------------------------------------------------------
-    # 6. Extract keywords for FTS search
-    # ----------------------------------------------------------
-    def _extract_keywords(self, text: str) -> List[str]:
-        words = re.findall(r"[a-zA-Z]{3,}", text)
-        stopwords = {"what", "how", "why", "the", "and", "that", "this"}
-        return [w for w in words if w not in stopwords]
+    def get_search_parameters(self, user_query, intent: Dict):
+        labels = intent.get("topic_filter_labels", [])
+        return {
+            "user_query_text": user_query,
+            "question_type": intent["question_type"],
+            "topic_filter_labels": labels,
+            "search_depth": 2 if intent["question_type"] == "explanation" else 3,
+            "relationship_types": ["RELATES_TO", "USES", "IMPLEMENTS"],
+            "min_relevance_score": 0.7,
+            "keywords": intent.get("keywords_found", []),
+            "extracted_concepts": intent.get("keywords_found", [])
+        }

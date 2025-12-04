@@ -46,28 +46,43 @@ class Feedback(models.Model):
 #     def __str__(self):
 #         return f'{self.user.username}: {self.message}'
 
-#  kerry evaluation part
-class EvaluationResult(models.Model):
+#  kerry evaluation part,updated
+class EvaluationRecord(models.Model):
     session_id = models.CharField(max_length=255)
-    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    question = models.TextField()
-    context = models.TextField(null=True, blank=True)
-    llm_answer = models.TextField()
-    ground_truth = models.TextField(null=True, blank=True)
-    relevance_score = models.FloatField(null=True, blank=True)
-    bert_score = models.FloatField(null=True, blank=True)
-    llm_rubric_score = models.FloatField(null=True, blank=True)
-    combined_score = models.FloatField(null=True, blank=True)
-    passed = models.BooleanField(default=False)
-    evaluation_timestamp = models.DateTimeField(default=timezone.now)
-    evaluation_details = models.JSONField(default=dict, blank=True)
-    action_taken = models.CharField(max_length=50, default="none")
-    ragas_score = models.FloatField(null=True, blank=True)
-    ragas_details = models.JSONField(null=True, blank=True)
+    user_query = models.TextField()
+    ai_response = models.TextField()
+    rag_used = models.BooleanField(default=False)
+    hybrid_mode = models.CharField(max_length=50)
+    
+    # Evaluation Metrics
+    confidence_score = models.FloatField(null=True, blank=True)
+    accuracy_score = models.FloatField(null=True, blank=True)  # Compared to ground truth
+    completeness_score = models.FloatField(null=True, blank=True)  # How complete the answer is
+    educational_value_score = models.FloatField(null=True, blank=True)  # Educational quality
+    
+    # Ground Truth Comparison
+    matched_ground_truth = models.ForeignKey('GroundTruth', null=True, blank=True, on_delete=models.SET_NULL, related_name='evaluations')
+    similarity_to_truth = models.FloatField(null=True, blank=True)  # Semantic similarity 0-1
+    
+    # Automatic Feedback
+    flagged_incorrect = models.BooleanField(default=False)
+    flag_reason = models.TextField(null=True, blank=True)
+    
+    # Human Assessment
+    human_rating = models.IntegerField(null=True, blank=True, choices=[(1,'Poor'),(2,'Fair'),(3,'Good'),(4,'Very Good'),(5,'Excellent')])
+    human_feedback = models.TextField(null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.CharField(max_length=255, null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
 
-    def __str__(self):
-        return f"Evaluation for session {self.session_id} - {self.question[:40]}"
-
+    class Meta:
+        app_label = 'core'
+        indexes = [
+            models.Index(fields=['session_id']),
+            models.Index(fields=['flagged_incorrect']),
+            models.Index(fields=['created_at']),
+        ]
 
 class GroundTruth(models.Model):
     question = models.TextField()
