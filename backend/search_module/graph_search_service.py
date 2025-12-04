@@ -164,9 +164,13 @@ class GraphSearchService:
                     logger.info(f"  Node name: {node.get('name', 'N/A')}")
                     logger.info(f"  Node description: {node.get('description', 'N/A')[:100]}...")
             
-            # Check scores
+            # Check scores and embeddings
             logger.info(f"  FTS Score: {record.get('fts_score', 'N/A')}")
-            logger.info(f"  VEC Score: {record.get('vec_score', 'N/A')}")
+            node_emb = record.get('node_embedding')
+            if node_emb is not None:
+                logger.info(f"  Node Embedding: type={type(node_emb)}, is_list={isinstance(node_emb, list)}, len={len(node_emb) if isinstance(node_emb, list) else 'N/A'}")
+            else:
+                logger.info(f"  Node Embedding: None")
             logger.info("-" * 30)
     
     def _build_cypher_query(self, user_query_text: str, user_embedding: Optional[List[float]],
@@ -202,16 +206,30 @@ class GraphSearchService:
         if where_conditions:
             query += "WHERE " + " OR ".join(where_conditions)
 
-        # ✅ Keep your FTS + relationship logic
+        # Add words list to params for the query
+        params['words_list'] = words
+        params['words_count'] = len(words)
+
+        # ✅ Improved FTS scoring with better differentiation
+        # Count how many query words match to create more granular scores
         query += f"""
             WITH n,
                 CASE 
-                    WHEN toLower(coalesce(n.name, '')) CONTAINS '{cleaned_text}' THEN 1.0
-                    WHEN toLower(coalesce(n.domain, '')) CONTAINS '{cleaned_text}' THEN 0.9
-                    WHEN toLower(coalesce(n.description, '')) CONTAINS '{cleaned_text}' THEN 0.7
+                    WHEN toLower(coalesce(n.name, '')) = '{cleaned_text}' THEN 1.0
+                    WHEN toLower(coalesce(n.name, '')) CONTAINS '{cleaned_text}' THEN 0.95
+                    WHEN toLower(coalesce(n.domain, '')) CONTAINS '{cleaned_text}' THEN 0.85
+                    WHEN toLower(coalesce(n.description, '')) CONTAINS '{cleaned_text}' THEN 0.75
                     ELSE 0.5
-                END AS fts_score
+                END AS base_fts_score
             WHERE n.embedding IS NOT NULL
+            
+            // Boost score based on how many query words match
+            WITH n, base_fts_score + 
+                CASE
+                    WHEN size([w IN $words_list WHERE toLower(coalesce(n.name, '')) CONTAINS w OR toLower(coalesce(n.description, '')) CONTAINS w]) >= $words_count THEN 0.2
+                    WHEN size([w IN $words_list WHERE toLower(coalesce(n.name, '')) CONTAINS w OR toLower(coalesce(n.description, '')) CONTAINS w]) > 0 THEN 0.1
+                    ELSE 0.0
+                END AS fts_score
 
             OPTIONAL MATCH path=(n)-[:RELATED_TO*1..{search_depth}]-(m)
             WITH n, collect(DISTINCT m.name) AS neighbors, fts_score
@@ -249,19 +267,45 @@ class GraphSearchService:
                 # -----------------------------
                 fts = float(record.get("fts_score", 0.0))
                 node_embedding = record.get("node_embedding")
+                
+                # DEBUG: Log what we're getting from Neo4j
+                if node_embedding is not None:
+                    logger.info(f"🔍 Raw node_embedding type: {type(node_embedding)}, is_list: {isinstance(node_embedding, list)}, len: {len(node_embedding) if isinstance(node_embedding, list) else 'N/A'}")
+                else:
+                    logger.warning(f"⚠️ node_embedding is None for node: {node.get('name') if hasattr(node, 'get') else 'Unknown'}")
+                
+                # Handle embedding extraction - Neo4j might return it in different formats
+                if node_embedding is None and hasattr(node, 'get'):
+                    node_embedding = node.get('embedding')
+                    if node_embedding:
+                        logger.info(f"📍 Retrieved embedding from node.get('embedding'): type={type(node_embedding)}")
+                
+                # Convert to list if needed
+                if node_embedding and not isinstance(node_embedding, list):
+                    try:
+                        node_embedding = list(node_embedding)
+                        logger.info(f"✅ Converted embedding to list, new len: {len(node_embedding)}")
+                    except Exception as conv_err:
+                        logger.error(f"❌ Failed to convert embedding to list: {conv_err}")
+                        node_embedding = None
 
                 # Normalize FTS to 0–1
-                # your current FTS is between 0.5 and 1.0
-                fts_norm = (fts - 0.5) / (1.0 - 0.5)
-                fts_norm = max(0.0, min(fts_norm, 1.0))
+                # FTS scores typically range from 0.0 to 1.0, but can be higher
+                # We'll use a more lenient normalization
+                fts_norm = min(fts, 1.0)  # Cap at 1.0
+                fts_norm = max(0.0, fts_norm)  # Floor at 0.0
 
                 # Compute semantic similarity
                 semantic = 0.0
-                if user_query_embedding and isinstance(node_embedding, list):
+                if user_query_embedding and isinstance(node_embedding, list) and len(node_embedding) > 0:
                     try:
                         semantic = self._cosine_similarity(user_query_embedding, node_embedding)
-                    except:
+                        logger.debug(f"✅ Computed similarity for '{node_dict.get('name', 'Unknown')}': {semantic:.3f}")
+                    except Exception as e:
+                        logger.error(f"Cosine similarity error: {e}")
                         semantic = 0.0
+                elif not isinstance(node_embedding, list) or (isinstance(node_embedding, list) and len(node_embedding) == 0):
+                    logger.debug(f"⚠️ Node '{node_dict.get('name', 'Unknown')}' missing/empty embedding (type: {type(node_embedding)}, len: {len(node_embedding) if isinstance(node_embedding, list) else 'N/A'})")
 
                 # Normalize semantic 0–1 (cosine range = -1 → 1)
                 semantic_norm = (semantic + 1.0) / 2.0
@@ -288,7 +332,10 @@ class GraphSearchService:
         processed.sort(key=lambda x: x["relevance_score"], reverse=True)
 
         # Remove extremely low-confidence results
-        return [p for p in processed if p["relevance_score"] >= 0.35]
+        # 0.35 is a balanced threshold (not too strict, not too lenient)
+        filtered = [p for p in processed if p["relevance_score"] >= 0.35]
+        logger.info(f"📊 Relevance filtering: {len(processed)} -> {len(filtered)} results (threshold: 0.35)")
+        return filtered
 
     def search_with_fallback(self, user_query_text: str, search_params: Dict, session_id: str) -> Dict:
         """
