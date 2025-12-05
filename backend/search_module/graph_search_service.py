@@ -52,6 +52,10 @@ class GraphSearchService:
         min_relevance_score = search_params.get('min_relevance_score', 0.7)
         keywords_from_intent = search_params.get('keywords', [])
 
+        logger.info(f"🚀 GraphSearchService.search() called with query: '{user_query_text}'")
+        logger.info(f"📊 Topic labels: {topic_labels}")
+        logger.info(f"📊 Search depth: {search_depth}")
+        
         # Debug the query execution
         self.debug_query_execution(user_query_text, search_params)
 
@@ -74,8 +78,8 @@ class GraphSearchService:
                         min_relevance_score, keywords_from_intent
                     )
                 else:
-                    # Simple text search only
-                    cypher_query, cypher_params = self.create_simple_search_query(user_query_text)
+                    # Attempt 3: Semantic-only search using embeddings (no text matching)
+                    cypher_query, cypher_params = self._build_semantic_only_query(user_query_embedding)
 
                 logger.info(f"Attempt {attempt + 1}: Executing query")
                 logger.debug(f"Query: {cypher_query}")
@@ -92,7 +96,7 @@ class GraphSearchService:
                     logger.info(f"Processed results count: {len(processed_results)}")
                     
                     # Apply minimum relevance score filter
-                    min_score = 0.35
+                    min_score = 0.5  # Higher threshold for quality and precision
                     final_results = [
                         res for res in processed_results 
                         if res.get('relevance_score', 0.0) >= min_score
@@ -112,6 +116,34 @@ class GraphSearchService:
         except Exception as e:
             logger.error(f"Error during Cypher query execution or processing: {e}", exc_info=True)
             return {'results': []}
+
+    def _build_semantic_only_query(self, user_embedding: List[float]) -> Tuple[str, Dict]:
+        """Build query that finds semantically similar nodes using only embeddings"""
+        if not user_embedding:
+            return self.create_simple_search_query("")
+        
+        query = """
+            MATCH (n)
+            WHERE n.embedding IS NOT NULL
+            WITH n, 
+                 gds.similarity.cosine(n.embedding, $embedding) AS semantic_score
+            WHERE semantic_score > 0.5
+            
+            // Get related nodes through relationships for broader context
+            OPTIONAL MATCH path=(n)-[:RELATED_TO*1..2]-(m)
+            WHERE m.embedding IS NOT NULL
+            
+            WITH n, semantic_score, collect(DISTINCT m.name) AS neighbors
+            RETURN DISTINCT n, 
+                   semantic_score AS fts_score,
+                   n.embedding AS node_embedding, 
+                   neighbors
+            ORDER BY semantic_score DESC
+            LIMIT 100
+        """
+        
+        params = {'embedding': user_embedding}
+        return query, params
 
     def create_simple_search_query(self, user_query_text: str) -> Tuple[str, Dict]:
         """
@@ -210,25 +242,36 @@ class GraphSearchService:
         params['words_list'] = words
         params['words_count'] = len(words)
 
-        # ✅ Improved FTS scoring with better differentiation
-        # Count how many query words match to create more granular scores
+        # ✅ Word-level FTS scoring with EXACT word matching (not substring)
+        # Score each node based on individual word matches using word boundaries
         query += f"""
             WITH n,
-                CASE 
-                    WHEN toLower(coalesce(n.name, '')) = '{cleaned_text}' THEN 1.0
-                    WHEN toLower(coalesce(n.name, '')) CONTAINS '{cleaned_text}' THEN 0.95
-                    WHEN toLower(coalesce(n.domain, '')) CONTAINS '{cleaned_text}' THEN 0.85
-                    WHEN toLower(coalesce(n.description, '')) CONTAINS '{cleaned_text}' THEN 0.75
-                    ELSE 0.5
-                END AS base_fts_score
+                // Split node fields into words and count exact matches with query words
+                size([w IN $words_list WHERE w IN [word IN split(toLower(coalesce(n.name, '')), ' ') WHERE word <> '']]) AS name_matches,
+                size([w IN $words_list WHERE w IN [word IN split(toLower(coalesce(n.domain, '')), ' ') WHERE word <> '']]) AS domain_matches,
+                size([w IN $words_list WHERE w IN [word IN split(toLower(coalesce(n.description, '')), ' ') WHERE word <> '']]) AS desc_matches
             WHERE n.embedding IS NOT NULL
             
-            // Boost score based on how many query words match
-            WITH n, base_fts_score + 
+            WITH n, name_matches, domain_matches, desc_matches,
+                // Calculate weighted score based on field importance
                 CASE
-                    WHEN size([w IN $words_list WHERE toLower(coalesce(n.name, '')) CONTAINS w OR toLower(coalesce(n.description, '')) CONTAINS w]) >= $words_count THEN 0.2
-                    WHEN size([w IN $words_list WHERE toLower(coalesce(n.name, '')) CONTAINS w OR toLower(coalesce(n.description, '')) CONTAINS w]) > 0 THEN 0.1
-                    ELSE 0.0
+                    // Exact match: entire node name matches a query word (e.g., "ddd" node for "what is ddd" query)
+                    WHEN size([w IN $words_list WHERE toLower(n.name) = w]) > 0 THEN 1.0
+                    // Multiple words in name match query words
+                    WHEN name_matches >= 2 THEN 0.9
+                    // Single word in name matches
+                    WHEN name_matches = 1 THEN 0.8
+                    // Multiple words in domain match
+                    WHEN domain_matches >= 2 THEN 0.7
+                    // Single word in domain matches
+                    WHEN domain_matches = 1 THEN 0.6
+                    // Multiple words in description match
+                    WHEN desc_matches >= 3 THEN 0.55
+                    WHEN desc_matches = 2 THEN 0.45
+                    // Single word in description matches
+                    WHEN desc_matches = 1 THEN 0.35
+                    // No matches (shouldn't happen due to WHERE clause)
+                    ELSE 0.2
                 END AS fts_score
 
             OPTIONAL MATCH path=(n)-[:RELATED_TO*1..{search_depth}]-(m)
@@ -268,11 +311,9 @@ class GraphSearchService:
                 fts = float(record.get("fts_score", 0.0))
                 node_embedding = record.get("node_embedding")
                 
-                # DEBUG: Log what we're getting from Neo4j
-                if node_embedding is not None:
-                    logger.info(f"🔍 Raw node_embedding type: {type(node_embedding)}, is_list: {isinstance(node_embedding, list)}, len: {len(node_embedding) if isinstance(node_embedding, list) else 'N/A'}")
-                else:
-                    logger.warning(f"⚠️ node_embedding is None for node: {node.get('name') if hasattr(node, 'get') else 'Unknown'}")
+                # Validate embedding exists (only log if problematic)
+                if node_embedding is None:
+                    logger.warning(f"⚠️ Missing embedding for node: {node.get('name') if hasattr(node, 'get') else 'Unknown'}")
                 
                 # Handle embedding extraction - Neo4j might return it in different formats
                 if node_embedding is None and hasattr(node, 'get'):
@@ -331,10 +372,16 @@ class GraphSearchService:
         # Sort highest first
         processed.sort(key=lambda x: x["relevance_score"], reverse=True)
 
-        # Remove extremely low-confidence results
-        # 0.35 is a balanced threshold (not too strict, not too lenient)
-        filtered = [p for p in processed if p["relevance_score"] >= 0.35]
-        logger.info(f"📊 Relevance filtering: {len(processed)} -> {len(filtered)} results (threshold: 0.35)")
+        # Remove low-confidence results
+        # 0.55 threshold for high-quality matches only
+        # Higher threshold ensures precision and reduces token usage
+        filtered = [p for p in processed if p["relevance_score"] >= 0.55]
+        
+        # Apply top-N cutoff for token efficiency
+        top_n = 20  # Limit to top 20 most relevant results
+        filtered = filtered[:top_n]
+        
+        logger.info(f"📊 Relevance filtering: {len(processed)} -> {len(filtered)} results (threshold: 0.55, top-{top_n})")
         return filtered
 
     def search_with_fallback(self, user_query_text: str, search_params: Dict, session_id: str) -> Dict:

@@ -205,10 +205,11 @@ DETAILED RESPONSE FORMAT:
         if not context.get('previous_messages'):
             return ""
            
-        context_parts = ["CONVERSATION CONTEXT:"]
+        context_parts = ["CONVERSATION CONTEXT (for understanding references like 'it', 'that', 'this'):"]
        
-        # Limit to last 3 messages for brevity in prompt
-        for msg in context['previous_messages'][-3:]:  
+        # Increased from 3 to 8 messages to capture more context for pronoun resolution
+        # This helps LLM understand references like "that", "it", "this concept" in follow-up questions
+        for msg in context['previous_messages'][-8:]:  
             role = msg.get('role', 'user')
             content = msg.get('content', '')
             # Truncate long messages to prevent exceeding token limits
