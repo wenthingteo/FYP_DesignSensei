@@ -197,8 +197,77 @@ class ContextManager:
             last_message = self.conversations[session_id]['messages'][-1:]
             self.conversations[session_id]['messages'] = last_message
     
+    def load_from_database(self, session_id: str, max_messages: int = 10):
+        """Load conversation history from database for session persistence across requests"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            from core.models import Message, Conversation
+            
+            logger.info(f"🔄 load_from_database called for session_id: {session_id}")
+            
+            # Check if conversation exists in database
+            conversation = Conversation.objects.filter(id=session_id).first()
+            if not conversation:
+                logger.warning(f"⚠️ No conversation found in DB for session_id: {session_id}")
+                return
+            
+            logger.info(f"✅ Found conversation in DB: {conversation.title}")
+            
+            # Load recent messages from database
+            messages = Message.objects.filter(
+                conversation=conversation
+            ).order_by('-created_at')[:max_messages]
+            
+            logger.info(f"📊 Found {messages.count()} messages in DB for this conversation")
+            
+            # Initialize session if not exists
+            if session_id not in self.conversations:
+                self.conversations[session_id] = {
+                    'messages': [],
+                    'created_at': conversation.created_at,
+                    'last_updated': datetime.now()
+                }
+            
+            # Add messages in chronological order (oldest first)
+            loaded_count = 0
+            for message in reversed(messages):
+                msg_dict = {
+                    'role': 'user' if message.sender == 'user' else 'assistant',
+                    'content': message.content,
+                    'timestamp': message.created_at,
+                    'metadata': message.metadata or {}
+                }
+                
+                # Avoid duplicates
+                if not any(m['content'] == msg_dict['content'] and m['timestamp'] == msg_dict['timestamp'] 
+                          for m in self.conversations[session_id]['messages']):
+                    self.conversations[session_id]['messages'].append(msg_dict)
+                    loaded_count += 1
+                    logger.debug(f"  Loaded {message.sender}: {message.content[:50]}...")
+            
+            logger.info(f"✅ Loaded {loaded_count} messages into context manager")
+            
+        except Exception as e:
+            logger.error(f"❌ Error loading context from database: {e}", exc_info=True)
+    
     def get_context(self, session_id: str, include_last_n: int = 5) -> Dict:
-        """Get conversation context for a session"""
+        """Get conversation context for a session (auto-loads from DB if not in memory)"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Auto-load from database if session not in memory
+        if session_id not in self.conversations:
+            logger.info(f"🔄 Session {session_id} not in memory, loading from database...")
+            self.load_from_database(session_id)
+            if session_id in self.conversations:
+                logger.info(f"✅ Loaded {len(self.conversations[session_id]['messages'])} messages from database")
+            else:
+                logger.warning(f"⚠️ No conversation found in database for session {session_id}")
+        else:
+            logger.info(f"✅ Session {session_id} already in memory with {len(self.conversations[session_id]['messages'])} messages")
+        
         if session_id not in self.conversations:
             return {'previous_messages': [], 'session_info': {}}
         

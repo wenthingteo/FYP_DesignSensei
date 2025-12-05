@@ -129,9 +129,11 @@ class ChatbotAPIView(APIView):
             graphrag_results = {'results': []}
             graph_results_list = []
 
+            logger.info(f"🔍 Graph search service status: {self.graph_search_service is not None}")
             if self.graph_search_service:
                 try:
-                    logger.info(f"[GraphRAG] Searching with params: {search_params}")
+                    logger.info(f"[GraphRAG] 🔎 Starting search for query: '{message_text}'")
+                    logger.info(f"[GraphRAG] 📋 Search params: {search_params}")
 
                     graphrag_results = self.graph_search_service.search(
                         user_query_text=message_text,
@@ -144,13 +146,16 @@ class ChatbotAPIView(APIView):
                     
                     if len(graph_results_list) == 0:
                         logger.warning(f"[GraphRAG] ⚠️ No results found for query: '{message_text[:50]}...'")
+                        logger.warning(f"[GraphRAG] ⚠️ Full graphrag_results: {graphrag_results}")
                 except Exception as e:
                     logger.error(f"[GraphRAG] ❌ Search error: {e}", exc_info=True)
+            else:
+                logger.error(f"[GraphRAG] ❌ Graph search service is None! Check Neo4j initialization.")
 
             # ---------------------------------------------------------
             # 3. HYBRID MODE — Evaluate Graph Quality using LLM Score
             # ---------------------------------------------------------
-            HYBRID_THRESHOLD = 0.55  # score required to rely on graph primarily
+            HYBRID_THRESHOLD = 0.55  # Higher threshold for quality graph results only
             llm_relevance_score = 0.0
 
             if graph_results_list:
@@ -253,16 +258,24 @@ class ChatbotAPIView(APIView):
                 # Add recent conversation history (last 3 exchanges)
                 if conversation_context and isinstance(conversation_context, dict):
                     previous_messages = conversation_context.get('previous_messages', [])
+                    logger.info(f"📝 LLM_ONLY mode: Found {len(previous_messages)} previous messages in context")
                     if previous_messages:
                         recent_history = previous_messages[-6:]  # Last 3 user+assistant pairs
+                        logger.info(f"📝 Adding {len(recent_history)} messages to LLM context")
                         for msg in recent_history:
                             messages.append({
                                 "role": msg.get("role", "user"),
                                 "content": msg.get("content", "")
                             })
+                    else:
+                        logger.warning(f"⚠️ No previous messages found in conversation_context!")
+                else:
+                    logger.warning(f"⚠️ conversation_context is not a dict or is None: {type(conversation_context)}")
                 
                 # Add current user message
                 messages.append({"role": "user", "content": message_text})
+                
+                logger.info(f"📤 Sending {len(messages)} messages to LLM (including system prompt)")
 
                 fallback_response = client.chat.completions.create(
                     model="gpt-4.1-nano-2025-04-14",
