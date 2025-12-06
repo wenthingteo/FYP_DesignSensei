@@ -2,7 +2,7 @@ import React, { useContext, useState, useRef, useEffect, useCallback } from "rea
 import { useNavigate } from 'react-router-dom';
 import axios from "axios";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBars, faPaperPlane, faSignOutAlt, faRotate } from '@fortawesome/free-solid-svg-icons';
+import { faBars, faPaperPlane, faSignOutAlt } from '@fortawesome/free-solid-svg-icons';
 import Lottie from "lottie-react";
 import robotAnimation from "../assets/robot_animation.json";
 import Sidebar from "../components/Sidebar";
@@ -35,13 +35,11 @@ const ChatbotPage = () => {
   const [errorMessage, setErrorMessage] = useState("");
   const [lastUserMessage, setLastUserMessage] = useState(null);
   
-  // NEW: Store full AI response for tab switching recovery
   const fullAiResponseRef = useRef("");
   const typingIntervalRef = useRef(null);
   const currentIndexRef = useRef(0);
   const timeoutTimerRef = useRef(null);
   const abortControllerRef = useRef(null);
-  const lastMessageIdRef = useRef(null); // Track last message ID for regeneration
 
   const [showWelcomePage, setShowWelcomePage] = useState(
     currentConversation === "new" || (!currentConversation && messages.length === 0)
@@ -514,7 +512,7 @@ const ChatbotPage = () => {
       setShowWelcomePage(false);
       setTransitioning(false);
     }, 700);
-  }, [chatData, setChatData, sendMessage, handleSend]);
+  }, [handleSend]);
 
   // --- Welcome page transition logic ---
   useEffect(() => {

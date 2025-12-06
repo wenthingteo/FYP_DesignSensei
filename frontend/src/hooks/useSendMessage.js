@@ -59,7 +59,7 @@ const useSendMessage = (
       abortControllerRef.current = new AbortController();
     }
 
-    // Frontend timeout: 55 seconds (backend timeout is 50s, we add 5s buffer)
+    // Frontend timeout: 15 seconds (backend timeout is 10s, we add 5s buffer)
     timeoutTimerRef.current = setTimeout(() => {
       setErrorState('timeout');
       setErrorMessage("Response generation is taking longer than expected. This might be due to high server load or complex processing.");
@@ -71,7 +71,7 @@ const useSendMessage = (
         abortControllerRef.current.abort();
       }
       clearAllTimers();
-    }, 55000); // 55 seconds timeout
+    }, 15000); // 15 seconds timeout
 
     try {
       const res = await axios.post("http://127.0.0.1:8000/api/chat/", {

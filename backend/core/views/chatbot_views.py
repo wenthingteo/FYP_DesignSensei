@@ -78,7 +78,7 @@ class ChatbotAPIView(APIView):
                 ],
                 max_tokens=30,
                 temperature=0.3,
-                timeout=10
+                timeout=5  # Reduced from 10s
             )
             title = response.choices[0].message.content.strip().strip(' "\'')
             words = title.split()
@@ -153,80 +153,54 @@ class ChatbotAPIView(APIView):
                 logger.error(f"[GraphRAG] ❌ Graph search service is None! Check Neo4j initialization.")
 
             # ---------------------------------------------------------
-            # 3. HYBRID MODE — Evaluate Graph Quality using LLM Score
+            # 3. OPTIMIZED LLM SCORING (Accurate but fast)
             # ---------------------------------------------------------
             HYBRID_THRESHOLD = 0.55  # Higher threshold for quality graph results only
             llm_relevance_score = 0.0
 
             if graph_results_list:
-                # Build structured summary with top results (more context, better formatting)
-                top_results = graph_results_list[:8]  # Increased from 6 to 8
+                # Analyze top 4 results - balance between speed (3) and accuracy (6)
+                top_results = graph_results_list[:4]
                 
-                # Extract detected topics for context
-                detected_topics = search_params.get('topic_filter_labels', [])[:3]
-                topic_context = f"Detected topics: {', '.join(detected_topics)}" if detected_topics else ""
-                
-                # Format results with clear structure (name + description, not full text)
-                formatted_results = []
-                for i, r in enumerate(top_results, 1):
-                    name = r.get('name', 'Unknown')
-                    desc = r.get('description', r.get('text', ''))[:200]  # First 200 chars
-                    formatted_results.append(f"{i}. {name}: {desc}")
-                
-                knowledge_summary = "\n".join(formatted_results)
+                # Ultra-concise format for speed
+                results_text = "\n".join([
+                    f"{i+1}. {r.get('name', 'Unknown')}: {r.get('description', r.get('text', ''))[:100]}"
+                    for i, r in enumerate(top_results)
+                ])
 
-                # Improved scoring prompt with clear criteria and examples
-                scoring_prompt = (
-                    "You are evaluating whether knowledge graph results can answer the user's question.\n\n"
-                    f"USER QUESTION: \"{message_text}\"\n"
-                    f"{topic_context}\n\n"
-                    "KNOWLEDGE GRAPH RESULTS:\n"
-                    f"{knowledge_summary}\n\n"
-                    "SCORING CRITERIA:\n"
-                    "• 0.8-1.0: Results directly answer the question with detailed, relevant information\n"
-                    "• 0.5-0.7: Results contain related concepts but lack completeness\n"
-                    "• 0.2-0.4: Results are tangentially related but don't address the question\n"
-                    "• 0.0-0.1: Results are irrelevant or off-topic\n\n"
-                    "IMPORTANT:\n"
-                    "- If question asks about 'DDD' and results contain DDD concepts → HIGH score (0.7-1.0)\n"
-                    "- If results provide definitions, examples, or explanations for the asked topic → HIGH score\n"
-                    "- Only give LOW scores if results don't match the question topic at all\n\n"
-                    "Output ONLY a single decimal number (e.g., 0.85):"
-                )
-
-                relevance_response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "You are an expert relevance evaluator. Analyze carefully and output only a decimal score."},
-                        {"role": "user", "content": scoring_prompt}
-                    ],
-                    max_tokens=10,
-                    temperature=0
-                )
+                # Minimal prompt for speed
+                scoring_prompt = f"Q: {message_text}\nKnowledge:\n{results_text}\n\nRelevance score (0-1):"
 
                 try:
+                    relevance_response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": "Rate relevance: 0.8+=excellent, 0.5-0.7=ok, <0.5=poor. Number only."},
+                            {"role": "user", "content": scoring_prompt}
+                        ],
+                        max_tokens=5,
+                        temperature=0,
+                        timeout=2  # Aggressive 2s timeout
+                    )
+
                     raw_score = relevance_response.choices[0].message.content.strip()
-                    logger.info(f"🔍 LLM raw relevance response: '{raw_score}'")
-                    
-                    # Extract first number found in response
                     import re
                     match = re.search(r'0\.[0-9]+|1\.0+|0\.0+', raw_score)
                     if match:
                         llm_relevance_score = float(match.group())
-                        logger.info(f"✅ Extracted LLM relevance score: {llm_relevance_score}")
+                        logger.info(f"✅ LLM score: {llm_relevance_score:.2f} from {len(top_results)} results")
                     else:
-                        # Fallback: calculate based on FTS scores if available
+                        # Fallback to FTS average
                         avg_fts = sum(r.get('fts_score', 0.5) for r in top_results) / len(top_results)
-                        llm_relevance_score = min(0.7, avg_fts)  # Cap at 0.7 for fallback
-                        logger.warning(f"⚠️ No number found in LLM response, using FTS average: {llm_relevance_score:.2f}")
+                        llm_relevance_score = min(0.7, avg_fts)
+                        logger.warning(f"⚠️ Using FTS fallback: {llm_relevance_score:.2f}")
                 except Exception as e:
-                    # Better fallback: use average of FTS scores from graph results
+                    # Fallback to FTS average on error
                     avg_fts = sum(r.get('fts_score', 0.5) for r in top_results) / len(top_results)
                     llm_relevance_score = min(0.7, avg_fts)
-                    logger.error(f"❌ Failed to parse LLM relevance score: {e}, using FTS average: {llm_relevance_score:.2f}")
+                    logger.error(f"❌ LLM scoring failed: {e}, using FTS: {llm_relevance_score:.2f}")
 
                 graphrag_results["average_llm_score"] = llm_relevance_score
-                logger.info(f"📊 Relevance scoring: {len(top_results)} results analyzed, final score: {llm_relevance_score:.2f}")
 
             # ---------------------------------------------------------
             # 4. HYBRID ROUTING: Decide LLM only / Blend / Graph Mode
@@ -280,8 +254,9 @@ class ChatbotAPIView(APIView):
                 fallback_response = client.chat.completions.create(
                     model="gpt-4.1-nano-2025-04-14",
                     messages=messages,
-                    max_tokens=350,
-                    temperature=0.2
+                    max_tokens=400,
+                    temperature=0.2,
+                    timeout=5  # Fast timeout
                 )
                 answer = fallback_response.choices[0].message.content.strip()
                 return (
@@ -309,7 +284,7 @@ class ChatbotAPIView(APIView):
                 if conversation_context and isinstance(conversation_context, dict):
                     previous_messages = conversation_context.get('previous_messages', [])
                     if previous_messages:
-                        recent_history = previous_messages[-6:]  # Last 3 exchanges
+                        recent_history = previous_messages[-4:]  # Last 2 exchanges (faster)
                         for msg in recent_history:
                             messages.append({
                                 "role": msg.get("role", "user"),
@@ -321,8 +296,9 @@ class ChatbotAPIView(APIView):
                 hybrid_response = client.chat.completions.create(
                     model="gpt-4.1-nano-2025-04-14",
                     messages=messages,
-                    max_tokens=380,
-                    temperature=0.25
+                    max_tokens=450,
+                    temperature=0.25,
+                    timeout=5  # Fast timeout
                 )
 
                 answer = hybrid_response.choices[0].message.content.strip()
@@ -380,11 +356,21 @@ class ChatbotAPIView(APIView):
             )
             is_new_conversation = True
 
-        # Generate AI Conversation Title
+        # Generate AI Conversation Title (ASYNC for speed)
         if is_new_conversation:
-            smart_title = self._generate_conversation_title(message_text)
-            conversation.title = smart_title
-            conversation.save()
+            # Start async title generation without blocking
+            import threading
+            def generate_title_async():
+                try:
+                    smart_title = self._generate_conversation_title(message_text)
+                    conversation.title = smart_title
+                    conversation.save(update_fields=['title'])
+                except Exception as e:
+                    logger.error(f"Async title generation failed: {e}")
+            
+            threading.Thread(target=generate_title_async, daemon=True).start()
+            # Keep temporary title for immediate response
+            conversation.title = message_text[:50] + "..." if len(message_text) > 50 else message_text
 
         session_id = str(conversation.id)
 
@@ -476,7 +462,7 @@ class ChatbotAPIView(APIView):
                         session_id,
                         conversation_context
                     ),
-                    timeout=50
+                    timeout=10  # 10 seconds max
                 )
             )
             loop.close()
