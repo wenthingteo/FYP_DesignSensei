@@ -363,7 +363,7 @@ class ChatbotAPIView(APIView):
         # Load conversation history from database for existing conversations
         if not is_new_conversation:
             logger.info(f"📚 Loading conversation history for existing conversation: {session_id}")
-            self.context_manager.load_from_database(session_id, max_messages=10)
+            self.context_manager.load_from_database(session_id, max_messages=5)
         else:
             logger.info(f"🆕 New conversation created: {session_id}")
 
