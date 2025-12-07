@@ -346,9 +346,30 @@ const ChatbotPage = () => {
 
     // For new conversation
     if (chatData.currentConversation === "new" || !chatData.currentConversation) {
+      // Step 1 & 2 & 3: Immediately show chat page with user message and thinking state
+      const tempConvId = `temp-conv-${Date.now()}`;
+      const tempUserMessage = {
+        id: `temp-user-${Date.now()}`,
+        content: messageContentToSend,
+        sender: "user",
+        conversation: tempConvId,
+      };
+
+      // Immediately update UI - this triggers welcome page to hide
+      setChatData((prev) => ({
+        ...prev,
+        currentConversation: tempConvId,
+        messages: [tempUserMessage],
+      }));
+
+      // Show thinking state immediately
+      setIsTyping(true);
+      setTypingMessageContent("");
+      setErrorState(null);
+      setErrorMessage("");
+
+      // Step 4: Create conversation in background
       try {
-        setTypingMessageContent("");
-        setIsTyping(true);
 
         // Clear any existing abort controller
         if (abortControllerRef.current) {
@@ -414,11 +435,20 @@ const ChatbotPage = () => {
           created_at: new Date().toISOString(),
         };
 
+        // Replace temp conversation and message IDs with real ones from backend
         setChatData((prev) => ({
           ...prev,
           conversations: [newConversation, ...prev.conversations],
           currentConversation: conversation_id,
-          messages: prev.messages.concat([user_message]),
+          messages: prev.messages.map(msg => {
+            if (msg.id === tempUserMessage.id) {
+              return { ...user_message, conversation: conversation_id };
+            }
+            if (msg.conversation === tempConvId) {
+              return { ...msg, conversation: conversation_id };
+            }
+            return msg;
+          }),
         }));
 
         triggerSidebarUpdate();
@@ -478,11 +508,15 @@ const ChatbotPage = () => {
         setTypingMessageContent("");
         fullAiResponseRef.current = "";
         currentIndexRef.current = 0;
+        // Keep temp message visible so user can regenerate
         return;
       }
     }
 
-    // Existing conversation
+    // Existing conversation - also hide welcome page if showing
+    if (showWelcomePage) {
+      setShowWelcomePage(false);
+    }
     await sendMessage(messageContentToSend);
   };
 
@@ -505,30 +539,21 @@ const ChatbotPage = () => {
   };
 
   const handleFirstMessageSend = useCallback(async (messageContent) => {
-    setTransitioning(true);
+    // Hide welcome page immediately when user sends first message
+    setShowWelcomePage(false);
+    setTransitioning(false);
+    
+    // Send the message (handleSend already hides welcome page and shows message)
     await handleSend(messageContent);
-
-    setTimeout(() => {
-      setShowWelcomePage(false);
-      setTransitioning(false);
-    }, 700);
   }, [handleSend]);
 
-  // --- Welcome page transition logic ---
+  // --- Welcome page visibility - only show on initial load with no conversation ---
   useEffect(() => {
-    const shouldShow = currentConversation === "new" || (!currentConversation && messages.length === 0);
-    if (showWelcomePage !== shouldShow) {
-      if (showWelcomePage && !shouldShow) {
-        setTransitioning(true);
-        setTimeout(() => {
-          setShowWelcomePage(shouldShow);
-          setTransitioning(false);
-        }, 700);
-      } else {
-        setShowWelcomePage(shouldShow);
-      }
+    const shouldShow = (currentConversation === "new" || !currentConversation) && messages.length === 0;
+    if (shouldShow !== showWelcomePage) {
+      setShowWelcomePage(shouldShow);
     }
-  }, [currentConversation, messages, showWelcomePage]);
+  }, [currentConversation, messages.length, showWelcomePage]);
 
   // --- Delete conversation modal logic ---
   const openConfirmModal = useCallback((convId) => {
