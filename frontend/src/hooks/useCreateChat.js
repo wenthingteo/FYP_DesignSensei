@@ -2,14 +2,15 @@
 
 const useCreateChat = (setChatData) => {
   return () => {
-    // Simply set the state to show welcome page - no API call yet
+    // Clear messages and set to new conversation state
+    // This ensures the first message sent will be added to the new conversation
     setChatData((prev) => ({
       ...prev,
       currentConversation: "new", // Special identifier for new conversation state
-      messages: [], // Empty messages to show welcome page
+      messages: [], // Clear all messages to start fresh
     }));
 
-    console.log("New conversation state set - showing welcome page");
+    console.log("New conversation state set - ready for first message");
   };
 };
 
