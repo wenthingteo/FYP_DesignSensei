@@ -15,20 +15,16 @@ from django.conf import settings
 from core.models import Conversation, Message
 from core.serializers import MessageSerializer, ConversationSerializer
 
-# Import prompt engine components
 from prompt_engine.intent_classifier import IntentClassifier
 from prompt_engine.managers.prompt_manager import PromptManager
 from prompt_engine.managers.context_manager import ContextManager
 from prompt_engine.templates.base_template import UserExpertise, ResponseLength
 
-# Import GraphRAG integration components
 from knowledge_graph.connection.neo4j_client import Neo4jClient
 from search_module.graph_search_service import GraphSearchService
 
-# Import Evaluation Service
 from evaluation.evaluation_service import EvaluationService
 
-# Configure logging for this view
 logger = logging.getLogger(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -112,9 +108,7 @@ class ChatbotAPIView(APIView):
         - Stronger hallucination protection
         """
         try:
-            # ---------------------------------------------------------
-            # 1. INTENT CLASSIFICATION (fast, synchronous)
-            # ---------------------------------------------------------
+            # INTENT CLASSIFICATION (fast, synchronous)
             intent = self.prompt_manager.intent_classifier.classify_intent(
                 user_query=message_text
             )
@@ -123,9 +117,7 @@ class ChatbotAPIView(APIView):
                 intent=intent
             )
 
-            # ---------------------------------------------------------
-            # 2. GRAPH SEARCH (GraphRAG)
-            # ---------------------------------------------------------
+            # GRAPH SEARCH (GraphRAG)
             graphrag_results = {'results': []}
             graph_results_list = []
 
@@ -152,9 +144,7 @@ class ChatbotAPIView(APIView):
             else:
                 logger.error(f"[GraphRAG] ❌ Graph search service is None! Check Neo4j initialization.")
 
-            # ---------------------------------------------------------
-            # 3. OPTIMIZED LLM SCORING (Accurate but fast)
-            # ---------------------------------------------------------
+            # OPTIMIZED LLM SCORING (Accurate but fast)
             HYBRID_THRESHOLD = 0.55  # Higher threshold for quality graph results only
             llm_relevance_score = 0.0
 
@@ -202,9 +192,7 @@ class ChatbotAPIView(APIView):
 
                 graphrag_results["average_llm_score"] = llm_relevance_score
 
-            # ---------------------------------------------------------
-            # 4. HYBRID ROUTING: Decide LLM only / Blend / Graph Mode
-            # ---------------------------------------------------------
+            # HYBRID ROUTING: Decide LLM only / Blend / Graph Mode
             if not graph_results_list:
                 mode = "LLM_ONLY"
                 logger.info(f"[MODE: LLM_ONLY] No graph results available")
@@ -338,9 +326,7 @@ class ChatbotAPIView(APIView):
         if not message_text:
             return Response({"error": "Message is required"}, status=400)
 
-        # ------------------------------------------------------------------
-        # 1. Create or fetch conversation
-        # ------------------------------------------------------------------
+        # Create or fetch conversation
         if conversation_id:
             conversation = get_object_or_404(
                 Conversation,
@@ -374,9 +360,14 @@ class ChatbotAPIView(APIView):
 
         session_id = str(conversation.id)
 
-        # ------------------------------------------------------------------
-        # 2. Handle normal message OR regenerate flow
-        # ------------------------------------------------------------------
+        # Load conversation history from database for existing conversations
+        if not is_new_conversation:
+            logger.info(f"📚 Loading conversation history for existing conversation: {session_id}")
+            self.context_manager.load_from_database(session_id, max_messages=10)
+        else:
+            logger.info(f"🆕 New conversation created: {session_id}")
+
+        # Handle normal message OR regenerate flow
         if is_regenerate:
             user_message = None
 
@@ -446,9 +437,7 @@ class ChatbotAPIView(APIView):
                 metadata={},
             )
 
-        # ------------------------------------------------------------------
-        # 3. AI processing (async with timeout)
-        # ------------------------------------------------------------------
+        # AI processing (async with timeout)
         conversation_context = self.context_manager.get_context(session_id)
 
         try:
@@ -489,9 +478,7 @@ class ChatbotAPIView(APIView):
         draft_answer = processed_result.get("response", "")
         context_text = str(graphrag_results.get("results", []))
 
-        # ------------------------------------------------------------------
-        # 4. NEW RAGAS EVALUATION PIPELINE (correct for ragas 0.3.9)
-        # ------------------------------------------------------------------
+        # NEW RAGAS EVALUATION PIPELINE (correct for ragas 0.3.9)
         eval_service = EvaluationService()
 
         # Extract final answer from processed_result
@@ -510,15 +497,27 @@ class ChatbotAPIView(APIView):
         except Exception as e:
             logger.error("Eval async save error: %s", e)
 
-        # ------------------------------------------------------------------
-        # 6. Save AI response message
-        # ------------------------------------------------------------------
+        # Save AI response message
+        # Convert conversation_context to JSON-serializable format (datetime -> string)
+        def make_json_serializable(obj):
+            """Recursively convert datetime objects to ISO format strings"""
+            if isinstance(obj, dict):
+                return {k: make_json_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [make_json_serializable(item) for item in obj]
+            elif hasattr(obj, 'isoformat'):  # datetime, date, time objects
+                return obj.isoformat()
+            else:
+                return obj
+        
+        serializable_context = make_json_serializable(conversation_context) if conversation_context else {}
+        
         ai_metadata = {
             "intent": processed_result.get("metadata", {}).get("intent"),
             "response_params": processed_result.get("response_params"),
             "citations": processed_result.get("citations"),
             "user_level_after_response": processed_result.get("metadata", {}).get("expertise_level"),
-            "context_used": conversation_context,
+            "context_used": serializable_context,
         }
 
         ai_message = Message.objects.create(
@@ -536,9 +535,7 @@ class ChatbotAPIView(APIView):
             metadata=ai_metadata,
         )
 
-        # ------------------------------------------------------------------
-        # 7. Return final structured response
-        # ------------------------------------------------------------------
+        # Return final structured response
         return Response({
             "conversation_id": conversation.id,
             "conversation_title": conversation.title,
