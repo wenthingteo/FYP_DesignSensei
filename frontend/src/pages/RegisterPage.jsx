@@ -7,16 +7,31 @@ function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleRegister = async (e) => {
     e.preventDefault();
     setErrorMsg("");
 
+    // Validate email ends with .com
+    if (!email.toLowerCase().endsWith('.com')) {
+      setErrorMsg("Email must end with .com");
+      return;
+    }
+
+    // Validate password length
+    if (password.length < 8) {
+      setErrorMsg("Password must be at least 8 characters long");
+      return;
+    }
+
     if (password !== confirmPassword) {
       setErrorMsg("Passwords do not match.");
       return;
     }
+
+    setLoading(true);
 
     try {
       const response = await fetch("http://127.0.0.1:8000/api/register/", {
@@ -39,6 +54,8 @@ function RegisterPage() {
     } catch (error) {
       console.error("Registration error:", error);
       setErrorMsg("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -337,17 +354,26 @@ function RegisterPage() {
               {/* Register Button */}
               <button
                 type="submit"
-                style={styles.registerBtn}
+                disabled={loading}
+                style={{
+                  ...styles.registerBtn,
+                  opacity: loading ? 0.6 : 1,
+                  cursor: loading ? "not-allowed" : "pointer",
+                }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#2563eb";
-                  e.currentTarget.style.boxShadow = "0 4px 6px rgba(59,130,246,0.3)";
+                  if (!loading) {
+                    e.currentTarget.style.backgroundColor = "#2563eb";
+                    e.currentTarget.style.boxShadow = "0 4px 6px rgba(59,130,246,0.3)";
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "#3b82f6";
-                  e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                  if (!loading) {
+                    e.currentTarget.style.backgroundColor = "#3b82f6";
+                    e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                  }
                 }}
               >
-                Sign Up
+                {loading ? "Signing Up..." : "Sign Up"}
               </button>
             </form>
 

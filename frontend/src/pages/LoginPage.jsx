@@ -6,6 +6,7 @@ function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminUsername, setAdminUsername] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
@@ -24,6 +25,8 @@ function LoginPage() {
   const handleLogin = async (e) => {
     e.preventDefault();
 
+    setLoading(true);
+
     try {
       const response = await fetch("http://127.0.0.1:8000/api/login/", {
         method: "POST",
@@ -41,11 +44,13 @@ function LoginPage() {
         await fetchChats();
         navigate("/chatbot");
       } else {
-        setErrorMsg(data.error || "Login failed");
+        setErrorMsg(data.error || "Invalid credentials.");
       }
     } catch (error) {
       console.error("Login error:", error);
       setErrorMsg("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -525,17 +530,26 @@ function LoginPage() {
               {/* Login Button */}
               <button
                 type="submit"
-                style={styles.loginBtn}
+                disabled={loading}
+                style={{
+                  ...styles.loginBtn,
+                  opacity: loading ? 0.6 : 1,
+                  cursor: loading ? "not-allowed" : "pointer",
+                }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#2563eb";
-                  e.currentTarget.style.boxShadow = "0 4px 6px rgba(59,130,246,0.3)";
+                  if (!loading) {
+                    e.currentTarget.style.backgroundColor = "#2563eb";
+                    e.currentTarget.style.boxShadow = "0 4px 6px rgba(59,130,246,0.3)";
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "#3b82f6";
-                  e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                  if (!loading) {
+                    e.currentTarget.style.backgroundColor = "#3b82f6";
+                    e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                  }
                 }}
               >
-                Login
+                {loading ? "Logging In..." : "Login"}
               </button>
             </form>
 
