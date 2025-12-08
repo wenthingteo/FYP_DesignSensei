@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone # Import timezone for default=timezone.now
+import uuid
+from datetime import timedelta
 
 # Create your models here.
 
@@ -95,3 +97,31 @@ class GroundTruth(models.Model):
 
     def __str__(self):
         return f"Ground Truth: {self.question[:40]}"
+
+class PasswordResetToken(models.Model):
+    """Model for password reset tokens"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_reset_tokens')
+    token = models.CharField(max_length=100, unique=True, default=uuid.uuid4)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['token']),
+            models.Index(fields=['expires_at']),
+        ]
+        ordering = ['-created_at']
+    
+    def save(self, *args, **kwargs):
+        # Set expiry time to 1 hour from creation if not set
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(hours=1)
+        super().save(*args, **kwargs)
+    
+    def is_valid(self):
+        """Check if token is valid (not expired and not used)"""
+        return not self.is_used and timezone.now() < self.expires_at
+    
+    def __str__(self):
+        return f"Reset token for {self.user.username} - {'Valid' if self.is_valid() else 'Invalid'}"

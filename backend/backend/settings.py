@@ -193,3 +193,18 @@ SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
 SESSION_COOKIE_HTTPONLY = False  # Allow JavaScript to access if needed
 SESSION_COOKIE_AGE = 1209600  # 2 weeks
 SESSION_SAVE_EVERY_REQUEST = True
+
+# Email configuration for password reset
+# For development: using Gmail SMTP (you need to set up App Password)
+# For production: use SendGrid, AWS SES, or other email service
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')  # Your Gmail address
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')  # Your Gmail App Password
+DEFAULT_FROM_EMAIL = f'Software Design Sensei <{os.getenv("EMAIL_HOST_USER", "noreply@example.com")}>'
+
+# Frontend URL for password reset links
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://127.0.0.1:3000')
+

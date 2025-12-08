@@ -6,16 +6,26 @@ function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminUsername, setAdminUsername] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState("");
   const [adminLoading, setAdminLoading] = useState(false);
+  
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetMessage, setResetMessage] = useState("");
+  const [resetError, setResetError] = useState("");
+  
   const navigate = useNavigate();
   const { fetchChats } = useContext(ChatContext);
 
   const handleLogin = async (e) => {
     e.preventDefault();
+
+    setLoading(true);
 
     try {
       const response = await fetch("http://127.0.0.1:8000/api/login/", {
@@ -34,11 +44,13 @@ function LoginPage() {
         await fetchChats();
         navigate("/chatbot");
       } else {
-        setErrorMsg(data.error || "Login failed");
+        setErrorMsg(data.error || "Invalid credentials.");
       }
     } catch (error) {
       console.error("Login error:", error);
       setErrorMsg("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -103,6 +115,63 @@ function LoginPage() {
     setAdminUsername("");
     setAdminPassword("");
     setAdminError("");
+  };
+
+  const openForgotPasswordModal = () => {
+    setShowForgotPasswordModal(true);
+    setResetEmail("");
+    setResetMessage("");
+    setResetError("");
+  };
+
+  const closeForgotPasswordModal = () => {
+    setShowForgotPasswordModal(false);
+    setResetEmail("");
+    setResetMessage("");
+    setResetError("");
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setResetError("");
+    setResetMessage("");
+
+    if (!resetEmail.trim()) {
+      setResetError("Please enter your email address");
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(resetEmail)) {
+      setResetError("Please enter a valid email address");
+      return;
+    }
+
+    setResetLoading(true);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/password-reset/request/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: resetEmail.trim().toLowerCase() }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setResetMessage(data.message);
+        setResetEmail("");
+      } else {
+        setResetError(data.error || "Failed to send reset email");
+      }
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      setResetError("Something went wrong. Please try again.");
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   const styles = {
@@ -438,19 +507,7 @@ function LoginPage() {
 
               {/* Password Input */}
               <div style={styles.formGroup}>
-                <div style={styles.formOptions}>
-                  <label style={styles.label}>Password</label>
-                  <button
-                    type="button"
-                    onClick={() => {/* Handle forgot password */}}
-                    style={styles.forgotPassword}
-                    onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
-                    onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}
-                  >
-                    Forgot Password?
-                  </button>
-                </div>
-                
+                <label style={styles.label}>Password</label>
                 <input
                   type="password"
                   value={password}
@@ -473,19 +530,48 @@ function LoginPage() {
               {/* Login Button */}
               <button
                 type="submit"
-                style={styles.loginBtn}
+                disabled={loading}
+                style={{
+                  ...styles.loginBtn,
+                  opacity: loading ? 0.6 : 1,
+                  cursor: loading ? "not-allowed" : "pointer",
+                }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#2563eb";
-                  e.currentTarget.style.boxShadow = "0 4px 6px rgba(59,130,246,0.3)";
+                  if (!loading) {
+                    e.currentTarget.style.backgroundColor = "#2563eb";
+                    e.currentTarget.style.boxShadow = "0 4px 6px rgba(59,130,246,0.3)";
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "#3b82f6";
-                  e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                  if (!loading) {
+                    e.currentTarget.style.backgroundColor = "#3b82f6";
+                    e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                  }
                 }}
               >
-                Login
+                {loading ? "Logging In..." : "Login"}
               </button>
             </form>
+
+            {/* Forgot Password Link */}
+            <div style={{ textAlign: 'center', margin: '1rem 0' }}>
+              <button
+                onClick={openForgotPasswordModal}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#3b82f6',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  padding: '0',
+                  textDecoration: 'none'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
+                onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}
+              >
+                Forgot Password?
+              </button>
+            </div>
 
             {/* Sign Up Link */}
             <p style={styles.signupLink}>
@@ -629,6 +715,123 @@ function LoginPage() {
                   {adminLoading ? "Verifying..." : "Login as Admin"}
                 </button>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showForgotPasswordModal && (
+        <div style={styles.modalOverlay} onClick={closeForgotPasswordModal}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>Reset Password</h3>
+              <button
+                onClick={closeForgotPasswordModal}
+                style={styles.closeBtn}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "#f3f4f6";
+                  e.currentTarget.style.color = "#1f2937";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                  e.currentTarget.style.color = "#9ca3af";
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={styles.modalBody}>
+              <p style={styles.modalSubtitle}>
+                Enter your email address and we'll send you a link to reset your password.
+              </p>
+
+              {resetError && (
+                <div style={styles.errorMessage}>
+                  {resetError}
+                </div>
+              )}
+
+              {resetMessage && (
+                <div style={{
+                  ...styles.errorMessage,
+                  backgroundColor: '#d1fae5',
+                  color: '#065f46',
+                  borderColor: '#6ee7b7'
+                }}>
+                  {resetMessage}
+                </div>
+              )}
+
+              {!resetMessage && (
+                <form onSubmit={handleForgotPassword}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Email Address</label>
+                    <input
+                      type="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      placeholder="Enter your email"
+                      required
+                      disabled={resetLoading}
+                      style={styles.input}
+                      onFocus={(e) => {
+                        e.currentTarget.style.outline = "2px solid #3b82f6";
+                        e.currentTarget.style.outlineOffset = "0px";
+                        e.currentTarget.style.borderColor = "#3b82f6";
+                      }}
+                      onBlur={(e) => {
+                        e.currentTarget.style.outline = "none";
+                        e.currentTarget.style.borderColor = "#d1d5db";
+                      }}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={resetLoading}
+                    style={{
+                      ...styles.loginBtn,
+                      opacity: resetLoading ? 0.6 : 1,
+                      cursor: resetLoading ? "not-allowed" : "pointer",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!resetLoading) {
+                        e.currentTarget.style.backgroundColor = "#2563eb";
+                        e.currentTarget.style.boxShadow = "0 4px 6px rgba(59,130,246,0.3)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!resetLoading) {
+                        e.currentTarget.style.backgroundColor = "#3b82f6";
+                        e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                      }
+                    }}
+                  >
+                    {resetLoading ? "Sending..." : "Send Reset Link"}
+                  </button>
+                </form>
+              )}
+
+              {resetMessage && (
+                <button
+                  onClick={closeForgotPasswordModal}
+                  style={{
+                    ...styles.loginBtn,
+                    marginTop: '1rem'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#2563eb";
+                    e.currentTarget.style.boxShadow = "0 4px 6px rgba(59,130,246,0.3)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "#3b82f6";
+                    e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                  }}
+                >
+                  Close
+                </button>
+              )}
             </div>
           </div>
         </div>

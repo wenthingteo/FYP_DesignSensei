@@ -5,6 +5,8 @@ import ChatbotPage from './pages/ChatbotPage';
 import FeedbackPage from './pages/FeedbackPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminDashboard from './pages/AdminDashboard';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 function AppNav() {
     return (
@@ -15,6 +17,8 @@ function AppNav() {
             <Route path="/chatbot" element={<ChatbotPage />} />
             <Route path="/feedback" element={<FeedbackPage />} />
             <Route path="/admin/feedback" element={<AdminDashboard />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
         </Routes>
     );
 }
