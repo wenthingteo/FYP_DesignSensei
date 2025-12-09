@@ -11,6 +11,11 @@ from core.views.password_reset_views import (
     PasswordResetValidateView,
     PasswordResetConfirmView
 )
+from core.views.evaluation_views import (
+    PerformanceReportView,
+    EvaluationDashboardView,
+    GroundTruthManagementView
+)
 
 # Base router for conversations
 router = DefaultRouter()
@@ -41,6 +46,11 @@ urlpatterns = [
 
     # === Chat-related API endpoints ===
     path('chat/', ChatbotAPIView.as_view(), name='chatbot_api'), # Removed 'api/' prefix
+
+    # === Evaluation & FYP Objective Endpoints ===
+    path('evaluation/performance-report/', PerformanceReportView.as_view(), name='performance_report'),
+    path('evaluation/dashboard/', EvaluationDashboardView.as_view(), name='evaluation_dashboard'),
+    path('evaluation/ground-truth/', GroundTruthManagementView.as_view(), name='ground_truth_management'),
 
     # === DRF viewsets ===
     path('', include(router.urls)),
