@@ -32,12 +32,23 @@ class Message(models.Model):
         return f'{self.sender.capitalize()} at {self.created_at}: {self.content[:30]}'
 
 class Feedback(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    FEEDBACK_TYPES = [
+        ('bug', 'Bug Report'),
+        ('feature', 'Feature Request'),
+        ('general', 'General Feedback'),
+    ]
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    name = models.CharField(max_length=100, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
     comment = models.TextField()
+    rating = models.IntegerField(default=0)
+    feedback_type = models.CharField(max_length=20, choices=FEEDBACK_TYPES, default='general')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f'Feedback by {self.user.username} at {self.created_at}'
+        user_info = self.user.username if self.user else (self.name or 'Anonymous')
+        return f'Feedback by {user_info} at {self.created_at}'
 
 # class Chat(models.Model): # This was commented out in your original code, so keeping it commented.
 #     user = models.ForeignKey(User, on_delete=models.CASCADE)
