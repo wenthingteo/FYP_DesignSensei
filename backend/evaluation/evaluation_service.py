@@ -39,7 +39,18 @@ class EvaluationService:
             from sentence_transformers import SentenceTransformer
             
             logger.info("Initializing SentenceTransformer for embeddings...")
-            self.embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+            try:
+                # Fix for PyTorch 2.x meta tensor issue
+                import torch
+                self.embedding_model = SentenceTransformer(
+                    "sentence-transformers/all-MiniLM-L6-v2",
+                    device='cpu'  # Explicitly set device to avoid meta tensor issues
+                )
+                # Ensure model is on CPU and loaded properly
+                self.embedding_model.eval()
+            except Exception as e:
+                logger.warning(f"Failed to load SentenceTransformer, using fallback: {e}")
+                self.embedding_model = None
             self._ragas_imported = True
             logger.info("RAGAS dependencies loaded successfully.")
 
@@ -194,6 +205,11 @@ class EvaluationService:
             # Initialize embedding model if needed
             if self.embedding_model is None:
                 self._ensure_ragas_loaded()
+            
+            # If model still failed to load, skip evaluation
+            if self.embedding_model is None:
+                logger.warning("Embedding model not available, skipping ground truth comparison")
+                return None, None, None, None, None
 
             # Get query embedding
             query_embedding = self.embedding_model.encode([user_query])[0]

@@ -264,8 +264,8 @@ const ChatbotPage = () => {
 
       typingIntervalRef.current = setInterval(() => {
         if (currentIndexRef.current < fullAiResponseContent.length) {
-          setTypingMessageContent(fullAiResponseContent.substring(0, currentIndexRef.current + 20));
-          currentIndexRef.current += 20;
+          setTypingMessageContent(fullAiResponseContent.substring(0, currentIndexRef.current + 150));
+          currentIndexRef.current += 150;
         } else {
           clearAllTimers();
           setIsTyping(false);
@@ -304,7 +304,7 @@ const ChatbotPage = () => {
           currentIndexRef.current = 0;
           setLastUserMessage(null);
         }
-      }, 0.5);
+      }, 10);
 
     } catch (error) {
       clearAllTimers();
@@ -457,7 +457,7 @@ const ChatbotPage = () => {
         fullAiResponseRef.current = fullAiResponseContent;
         currentIndexRef.current = 0;
         
-        const typingSpeed = 0.5;
+        const typingSpeed = 10;
 
         // Clear any existing interval
         if (typingIntervalRef.current) {
@@ -466,8 +466,8 @@ const ChatbotPage = () => {
 
         typingIntervalRef.current = setInterval(() => {
           if (currentIndexRef.current < fullAiResponseContent.length) {
-            setTypingMessageContent(fullAiResponseContent.substring(0, currentIndexRef.current + 20));
-            currentIndexRef.current += 20;
+            setTypingMessageContent(fullAiResponseContent.substring(0, currentIndexRef.current + 150));
+            currentIndexRef.current += 150;
           } else {
             clearAllTimers();
             setIsTyping(false);

@@ -38,6 +38,125 @@
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
+.export-button {
+  padding: 0.75rem 1.5rem;
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 500;
+}
+
+.export-button:hover {
+  background: #059669;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.type-badge {
+  display: inline-block;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.type-badge.type-bug {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.type-badge.type-bug.report {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.type-badge.type-feature {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.type-badge.type-feature.request {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.type-badge.type-general {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.type-badge.type-general.feedback {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.rating-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 80px;
+}
+
+.rating-badge {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+  min-width: 45px;
+}
+
+.rating-badge.rating-5 {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.rating-badge.rating-4 {
+  background: #d9f99d;
+  color: #3f6212;
+}
+
+.rating-badge.rating-3 {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.rating-badge.rating-2 {
+  background: #fed7aa;
+  color: #9a3412;
+}
+
+.rating-badge.rating-1 {
+  background: #fecaca;
+  color: #991b1b;
+}
+
+.rating-badge.rating-0 {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.rating-bar {
+  width: 100%;
+  height: 4px;
+  background: #e5e7eb;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.rating-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f59e0b 0%, #f59e0b 100%);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
 .feedback-stats {
   margin-bottom: 2rem;
 }

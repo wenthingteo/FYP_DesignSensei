@@ -54,6 +54,10 @@ class AdminFeedbackView(APIView):
         
         feedbacks = Feedback.objects.select_related('user').order_by('-created_at')
         
+        from django.utils import timezone
+        import pytz
+        malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
+        
         feedback_data = [
             {
                 'id': fb.id,
@@ -62,7 +66,7 @@ class AdminFeedbackView(APIView):
                 'comment': fb.comment,
                 'rating': fb.rating,
                 'feedback_type': fb.get_feedback_type_display(),
-                'created_at': fb.created_at.strftime('%Y-%m-%d %H:%M:%S')
+                'created_at': fb.created_at.astimezone(malaysia_tz).strftime('%Y-%m-%d %H:%M:%S')
             }
             for fb in feedbacks
         ]
