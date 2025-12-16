@@ -44,7 +44,11 @@ const FeedbackPage = () => {
     try {
       const response = await axios.post("http://127.0.0.1:8000/api/feedback/", 
         { 
-          comment: formData.feedback 
+          comment: formData.feedback,
+          rating: formData.rating,
+          feedbackType: formData.feedbackType || 'general',
+          name: formData.name,
+          email: formData.email
         }, 
         {
           withCredentials: true,

@@ -112,6 +112,23 @@ class ChatbotAPIView(APIView):
             intent = self.prompt_manager.intent_classifier.classify_intent(
                 user_query=message_text
             )
+            
+            # Check if question is out-of-scope
+            question_type = intent.get('question_type', '')
+            if question_type == 'out_of_scope_general':
+                logger.info(f"🚫 OUT-OF-SCOPE query detected: '{message_text[:50]}...'")
+                empty_graphrag_results = {'results': []}
+                out_of_scope_message = (
+                    "I'm sorry, but I'm specialized in software design topics only. "
+                    "I can help you with design patterns, SOLID principles, software architecture, "
+                    "code structure, and other software engineering concepts. "
+                    "Is there a software design topic I can assist you with?"
+                )
+                return (
+                    {"response": out_of_scope_message, "metadata": {"mode": "OUT_OF_SCOPE", "score": 0.0, "intent": intent}},
+                    empty_graphrag_results
+                )
+            
             search_params = self.prompt_manager.intent_classifier.get_search_parameters(
                 user_query=message_text,
                 intent=intent
@@ -284,9 +301,9 @@ class ChatbotAPIView(APIView):
                 hybrid_response = client.chat.completions.create(
                     model="gpt-4.1-nano-2025-04-14",
                     messages=messages,
-                    max_tokens=450,
+                    max_tokens=2000,
                     temperature=0.25,
-                    timeout=5  # Fast timeout
+                    timeout=10
                 )
 
                 answer = hybrid_response.choices[0].message.content.strip()

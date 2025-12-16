@@ -36,7 +36,23 @@ class IntentClassifier:
             QuestionType.ANALYSIS: [r"\banalyze\b", r"\bevaluate\b", r"\bpros\b", r"\bcons\b"],
             QuestionType.TROUBLESHOOTING: [r"\bproblem\b", r"\berror\b", r"\bfix\b", r"\bnot working\b"],
             QuestionType.GREETING: [r"^(hi|hello|hey)\b", r"\bhow are you\b"],
-            QuestionType.OUT_OF_SCOPE_GENERAL: [r"\bweather\b", r"\bjoke\b", r"\bcapital of\b", r"\bwho is\b"]
+            QuestionType.OUT_OF_SCOPE_GENERAL: [
+                # Original patterns
+                r"\bweather\b", r"\bjoke\b", r"\bcapital of\b", r"\bwho is\b",
+                # Food/Drink related
+                r"\bfood\b", r"\beat\b", r"\blunch\b", r"\bdinner\b", r"\bbreakfast\b", r"\brestaurant\b", 
+                r"\bcoffee\b", r"\btea\b", r"\bdrink\b", r"\bmeal\b", r"\bcook\b", r"\brecipe\b",
+                # Entertainment
+                r"\bmovie\b", r"\bfilm\b", r"\bmusic\b", r"\bsong\b", r"\bgame\b(?!.*\bdesign\b)", r"\bsport\b",
+                # General non-tech topics
+                r"\btravel\b", r"\bvacation\b", r"\bholiday\b", r"\bhealth\b", r"\bmedical\b",
+                r"\bpolitics\b", r"\breligion\b", r"\bhistory\b(?!.*\bsoftware\b)", 
+                r"\bgeography\b", r"\bmath\b(?!.*\balgorithm\b)",
+                # Shopping/Fashion
+                r"\bshopping\b", r"\bfashion\b", r"\bclothes\b", r"\bshoes\b",
+                # Animals/Nature
+                r"\banimal\b", r"\bpet\b", r"\bdog\b", r"\bcat\b", r"\bplant\b", r"\bflower\b"
+            ]
         }
 
         # 🔹 Topic detection keywords
@@ -93,16 +109,24 @@ class IntentClassifier:
     def classify_intent(self, user_query: str, graphrag_results: Optional[Dict] = None) -> Dict:
         query = user_query.lower().strip()
 
+        # Check greetings first
         for pattern in self.question_patterns[QuestionType.GREETING]:
             if re.search(pattern, query):
                 return self._make_result(QuestionType.GREETING, SoftwareDesignTopic.GENERAL, 1.0, 1.0)
 
+        # Check explicit out-of-scope patterns
         for pattern in self.question_patterns[QuestionType.OUT_OF_SCOPE_GENERAL]:
             if re.search(pattern, query):
                 return self._make_result(QuestionType.OUT_OF_SCOPE_GENERAL, SoftwareDesignTopic.GENERAL, 1.0, 1.0)
 
+        # Classify question type and topic
         q_type, q_conf = self._classify_question_type(query)
         topic, t_conf, keywords = self._classify_topic(query)
+
+        # If no software design keywords found AND topic confidence is low, mark as out-of-scope
+        if not keywords and t_conf < 0.3 and topic == SoftwareDesignTopic.GENERAL:
+            logger.info(f"No software design keywords found in query: '{user_query}' - marking as out-of-scope")
+            return self._make_result(QuestionType.OUT_OF_SCOPE_GENERAL, SoftwareDesignTopic.GENERAL, 0.9, 0.9)
 
         overall_conf = (q_conf + t_conf) / 2
         return self._make_result(q_type, topic, q_conf, t_conf, keywords, overall_conf)

@@ -59,7 +59,7 @@ const useSendMessage = (
       abortControllerRef.current = new AbortController();
     }
 
-    // Frontend timeout: 15 seconds (backend timeout is 10s, we add 5s buffer)
+    // Frontend timeout: 60 seconds (backend timeout is 50s + extra buffer for longer responses)
     timeoutTimerRef.current = setTimeout(() => {
       setErrorState('timeout');
       setErrorMessage("Response generation is taking longer than expected. This might be due to high server load or complex processing.");
@@ -71,7 +71,7 @@ const useSendMessage = (
         abortControllerRef.current.abort();
       }
       clearAllTimers();
-    }, 15000); // 15 seconds timeout
+    }, 60000); // 60 seconds timeout
 
     try {
       const res = await axios.post("http://127.0.0.1:8000/api/chat/", {
@@ -129,8 +129,8 @@ const useSendMessage = (
 
       typingIntervalRef.current = setInterval(() => {
         if (currentIndexRef.current < fullAiResponseContent.length) {
-          setTypingMessageContent(fullAiResponseContent.substring(0, currentIndexRef.current + 20));
-          currentIndexRef.current += 20;
+          setTypingMessageContent(fullAiResponseContent.substring(0, currentIndexRef.current + 150));
+          currentIndexRef.current += 150;
         } else {
           clearAllTimers();
           setIsTyping(false);
@@ -163,7 +163,7 @@ const useSendMessage = (
             setLastUserMessage(null);
           }
         }
-      }, 0.5); // Adjust typing speed to match ChatbotPage (0.5ms)
+      }, 10); // Adjust typing speed to match ChatbotPage (0.5ms)
 
     } catch (err) {
       console.error("Failed to send message or get bot response", err);
