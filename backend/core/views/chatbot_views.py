@@ -129,6 +129,24 @@ class ChatbotAPIView(APIView):
                     empty_graphrag_results
                 )
             
+            # Handle introductory/capability questions with short friendly response
+            if question_type == 'introductory':
+                logger.info(f"👋 INTRODUCTORY query detected: '{message_text[:50]}...'")
+                empty_graphrag_results = {'results': []}
+                introductory_message = (
+                    "Yes, I'd be happy to help you with software design! 🎯\n\n"
+                    "I can assist you with:\n"
+                    "• **Design Patterns** (Singleton, Factory, Observer, etc.)\n"
+                    "• **SOLID Principles**\n"
+                    "• **Software Architecture** (MVC, Microservices, etc.)\n"
+                    "• **Code Structure & Best Practices**\n\n"
+                    "Feel free to ask me any specific question about software design!"
+                )
+                return (
+                    {"response": introductory_message, "metadata": {"mode": "INTRODUCTORY", "score": 1.0, "intent": intent}},
+                    empty_graphrag_results
+                )
+            
             search_params = self.prompt_manager.intent_classifier.get_search_parameters(
                 user_query=message_text,
                 intent=intent

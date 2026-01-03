@@ -13,6 +13,7 @@ class QuestionType(Enum):
     ANALYSIS = "analysis"
     TROUBLESHOOTING = "troubleshooting"
     GREETING = "greeting"
+    INTRODUCTORY = "introductory"  # For capability/help questions
     OUT_OF_SCOPE_GENERAL = "out_of_scope_general"
     UNKNOWN = "unknown"
 
@@ -36,6 +37,12 @@ class IntentClassifier:
             QuestionType.ANALYSIS: [r"\banalyze\b", r"\bevaluate\b", r"\bpros\b", r"\bcons\b"],
             QuestionType.TROUBLESHOOTING: [r"\bproblem\b", r"\berror\b", r"\bfix\b", r"\bnot working\b"],
             QuestionType.GREETING: [r"^(hi|hello|hey)\b", r"\bhow are you\b"],
+            QuestionType.INTRODUCTORY: [
+                r"\bcan you help\b", r"\bhelp me with\b", r"\bwhat can you\b",
+                r"\bdo you know\b", r"\bare you able\b", r"\bcan you assist\b",
+                r"\btell me about yourself\b", r"\bwhat do you do\b",
+                r"\bwhat are you\b", r"\bwho are you\b"
+            ],
             QuestionType.OUT_OF_SCOPE_GENERAL: [
                 # Original patterns
                 r"\bweather\b", r"\bjoke\b", r"\bcapital of\b", r"\bwho is\b",
@@ -78,6 +85,9 @@ class IntentClassifier:
             ],
             SoftwareDesignTopic.CODE_STRUCTURE: [
                 "structure", "class", "function", "module", "interface", "coupling", "cohesion"
+            ],
+            SoftwareDesignTopic.GENERAL: [
+                "software design", "design", "software", "help me with", "learn", "teach", "understand"
             ]
         }
 
@@ -113,6 +123,13 @@ class IntentClassifier:
         for pattern in self.question_patterns[QuestionType.GREETING]:
             if re.search(pattern, query):
                 return self._make_result(QuestionType.GREETING, SoftwareDesignTopic.GENERAL, 1.0, 1.0)
+
+        # Check introductory/capability questions (e.g., "Can you help me with software design?")
+        for pattern in self.question_patterns[QuestionType.INTRODUCTORY]:
+            if re.search(pattern, query):
+                # Only if it mentions software/design topics
+                if re.search(r"\b(software|design|pattern|architecture|code|programming)\b", query):
+                    return self._make_result(QuestionType.INTRODUCTORY, SoftwareDesignTopic.GENERAL, 1.0, 1.0)
 
         # Check explicit out-of-scope patterns
         for pattern in self.question_patterns[QuestionType.OUT_OF_SCOPE_GENERAL]:
