@@ -28,31 +28,31 @@ convo_router.register(r'messages', MessageViewSet, basename='conversation-messag
 
 urlpatterns = [
     # Health check
-    path('ping/', auth_views.ping, name='api_ping'), # Removed 'api/' prefix
+    path('ping/', auth_views.ping, name='api_ping'),
 
-    # === Auth-related API endpoints ===
-    path('login/', auth_views.login, name='api_login'), # Removed 'api/' prefix
-    path('register/', auth_views.register, name='api_register'), # Removed 'api/' prefix
-    path('logout/', auth_views.logout, name='api_logout'), # Removed 'api/' prefix
+    # Auth-related API endpoints
+    path('login/', auth_views.login, name='api_login'),
+    path('register/', auth_views.register, name='api_register'),
+    path('logout/', auth_views.logout, name='api_logout'),
     
     # Password reset endpoints
     path('password-reset/request/', PasswordResetRequestView.as_view(), name='password_reset_request'),
     path('password-reset/validate/', PasswordResetValidateView.as_view(), name='password_reset_validate'),
     path('password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
     
-    path('feedback/', FeedbackView.as_view(), name='api_feedback'), # Removed 'api/' prefix
+    path('feedback/', FeedbackView.as_view(), name='api_feedback'),
     path('admin/feedback/', AdminFeedbackView.as_view(), name='admin_feedback_list'),
     path('admin/feedback/<int:feedback_id>/', AdminFeedbackView.as_view(), name='admin_feedback_delete'),
 
-    # === Chat-related API endpoints ===
-    path('chat/', ChatbotAPIView.as_view(), name='chatbot_api'), # Removed 'api/' prefix
+    # Chat-related API endpoints
+    path('chat/', ChatbotAPIView.as_view(), name='chatbot_api'),
 
-    # === Evaluation & FYP Objective Endpoints ===
+    # Evaluation & FYP Objective Endpoints
     path('evaluation/performance-report/', PerformanceReportView.as_view(), name='performance_report'),
     path('evaluation/dashboard/', EvaluationDashboardView.as_view(), name='evaluation_dashboard'),
     path('evaluation/ground-truth/', GroundTruthManagementView.as_view(), name='ground_truth_management'),
 
-    # === DRF viewsets ===
+    # DRF viewsets
     path('', include(router.urls)),
     path('', include(convo_router.urls)),
 ]
