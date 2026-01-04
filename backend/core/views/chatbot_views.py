@@ -436,7 +436,20 @@ class ChatbotAPIView(APIView):
                 )
             else:
                 ctx = self.context_manager.get_context(session_id)
-                if not any(m.get("role") == "user" and m.get("content") == user_message.content for m in ctx):
+                # Ensure ctx is a list and handle both dict and string items
+                if isinstance(ctx, list):
+                    if not any(
+                        (isinstance(m, dict) and m.get("role") == "user" and m.get("content") == user_message.content)
+                        for m in ctx
+                    ):
+                        self.context_manager.add_message(
+                            session_id=session_id,
+                            role="user",
+                            content=user_message.content,
+                            metadata=user_message.metadata,
+                        )
+                else:
+                    # If ctx is not a list, just add the message
                     self.context_manager.add_message(
                         session_id=session_id,
                         role="user",

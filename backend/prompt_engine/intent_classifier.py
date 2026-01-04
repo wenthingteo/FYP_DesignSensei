@@ -34,8 +34,8 @@ class IntentClassifier:
             QuestionType.EXPLANATION: [r"\bwhat is\b", r"\bexplain\b", r"\bdefine\b", r"\bdescribe\b", r"\bhow does\b"],
             QuestionType.COMPARISON: [r"\bdifference\b", r"\bcompare\b", r"\bvs\b", r"\bversus\b"],
             QuestionType.APPLICATION: [r"\bhow to\b", r"\bexample\b", r"\buse\b", r"\bapply\b", r"\bimplement\b"],
-            QuestionType.ANALYSIS: [r"\banalyze\b", r"\bevaluate\b", r"\bpros\b", r"\bcons\b"],
-            QuestionType.TROUBLESHOOTING: [r"\bproblem\b", r"\berror\b", r"\bfix\b", r"\bnot working\b"],
+            QuestionType.ANALYSIS: [r"\banalyze\b", r"\bevaluate\b", r"\bpros\b", r"\bcons\b", r"\badvantages\b", r"\bdisadvantages\b", r"\bbenefits\b"],
+            QuestionType.TROUBLESHOOTING: [r"\bproblem\b", r"\berror\b", r"\bfix\b", r"\bnot working\b", r"\bissue\b", r"\bdebug\b"],
             QuestionType.GREETING: [r"^(hi|hello|hey)\b", r"\bhow are you\b"],
             QuestionType.INTRODUCTORY: [
                 r"\bcan you help\b", r"\bhelp me with\b", r"\bwhat can you\b",
@@ -66,22 +66,23 @@ class IntentClassifier:
         self.topic_keywords = {
             SoftwareDesignTopic.DESIGN_PATTERNS: [
                 "pattern", "singleton", "factory", "strategy", "decorator",
-                "observer", "builder", "adapter", "facade", "prototype", "command"
+                "observer", "builder", "adapter", "facade", "prototype", "command",
+                "dependency injection", "injection"
             ],
             SoftwareDesignTopic.SOLID_PRINCIPLES: [
-                "solid", "single responsibility", "open closed", "liskov",
-                "interface segregation", "dependency inversion"
+                "solid", "single responsibility", "open closed", "open-closed", "liskov",
+                "interface segregation", "dependency inversion", "srp", "ocp", "lsp", "isp", "dip"
             ],
             SoftwareDesignTopic.ARCHITECTURE: [
                 "architecture", "mvc", "microservices", "monolith", "layered",
-                "hexagonal", "clean architecture"
+                "hexagonal", "clean architecture", "rest", "graphql", "api", "service"
             ],
             SoftwareDesignTopic.DDD: [
-                "ddd", "domain driven", "aggregate", "value object", "entity", "repository"
+                "ddd", "domain driven", "domain-driven", "aggregate", "value object", "entity", "repository", "bounded context"
             ],
             SoftwareDesignTopic.QUALITY: [
                 "quality", "scalability", "maintainability", "performance", 
-                "readability", "refactor"
+                "readability", "refactor", "advantages", "pros", "cons"
             ],
             SoftwareDesignTopic.CODE_STRUCTURE: [
                 "structure", "class", "function", "module", "interface", "coupling", "cohesion"
@@ -156,7 +157,27 @@ class IntentClassifier:
         }
         if not any(scores.values()):
             return QuestionType.EXPLANATION, 0.3
-        best = max(scores, key=scores.get)
+        
+        # If there's a tie, prioritize more specific types
+        max_score = max(scores.values())
+        candidates = [qt for qt, score in scores.items() if score == max_score]
+        
+        # Priority order: TROUBLESHOOTING > COMPARISON > ANALYSIS > APPLICATION > EXPLANATION
+        priority = [
+            QuestionType.TROUBLESHOOTING,
+            QuestionType.COMPARISON,
+            QuestionType.ANALYSIS,
+            QuestionType.APPLICATION,
+            QuestionType.EXPLANATION
+        ]
+        
+        for qt in priority:
+            if qt in candidates:
+                best = qt
+                break
+        else:
+            best = candidates[0]
+        
         conf = min(0.4 + 0.1 * scores[best], 1.0)
         return best, conf
 
