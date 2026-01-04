@@ -78,7 +78,7 @@ class EvaluationService:
         """
         if self.embedding_model is None:
             self._ensure_ragas_loaded()
-        return self.embedding_model.encode(texts, convert_to_numpy=False).tolist()
+        return self.embedding_model.encode(texts, convert_to_numpy=False, show_progress_bar=False).tolist()
 
     # --------------------------
     # MAIN EVALUATION METHOD
@@ -212,14 +212,14 @@ class EvaluationService:
                 return None, None, None, None, None
 
             # Get query embedding
-            query_embedding = self.embedding_model.encode([user_query])[0]
+            query_embedding = self.embedding_model.encode([user_query], show_progress_bar=False)[0]
             
             # Find best matching ground truth
             best_match = None
             best_similarity = 0.0
             
             for gt in ground_truths:
-                gt_embedding = self.embedding_model.encode([gt.question])[0]
+                gt_embedding = self.embedding_model.encode([gt.question], show_progress_bar=False)[0]
                 similarity = np.dot(query_embedding, gt_embedding) / (
                     np.linalg.norm(query_embedding) * np.linalg.norm(gt_embedding)
                 )
