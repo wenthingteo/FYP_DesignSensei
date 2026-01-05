@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faHome, faSignOutAlt, faStar, faBug, faLightbulb, faCommentDots, faCheck } from '@fortawesome/free-solid-svg-icons';
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import API_BASE from "../config";
 
 const FeedbackPage = () => {
   const [formData, setFormData] = useState({
@@ -42,7 +43,7 @@ const FeedbackPage = () => {
     const csrfToken = getCookie('csrftoken');
 
     try {
-      const response = await axios.post("http://127.0.0.1:8000/api/feedback/", 
+      const response = await axios.post(`${API_BASE}/api/feedback/`, 
         { 
           comment: formData.feedback,
           rating: formData.rating,
@@ -88,7 +89,7 @@ const FeedbackPage = () => {
 
   const handleLogout = async () => {
     try {
-      await axios.post("http://127.0.0.1:8000/api/logout/", {}, {
+      await axios.post(`${API_BASE}/api/logout/`, {}, {
         withCredentials: true,
         headers: {
           'X-CSRFToken': getCookie('csrftoken'),

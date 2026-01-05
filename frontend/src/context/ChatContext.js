@@ -1,5 +1,6 @@
 import { createContext, useState, useEffect, useCallback } from "react";
 import axios from "axios";
+import API_BASE from "../config";
 
 export const ChatContext = createContext();
 
@@ -33,7 +34,7 @@ export const ChatProvider = ({ children }) => {
     setLoading(true); // Set loading to true when fetching starts
     setError(null);    // Clear any previous errors
     try {
-      const response = await axios.get("http://127.0.0.1:8000/api/chat/", {
+      const response = await axios.get(`${API_BASE}/api/chat/`, {
         withCredentials: true,
         headers: {
           "X-CSRFToken": getCookie("csrftoken"),

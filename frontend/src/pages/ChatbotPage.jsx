@@ -1,6 +1,7 @@
 import React, { useContext, useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from 'react-router-dom';
 import axios from "axios";
+import API_BASE from "../config";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBars, faPaperPlane, faSignOutAlt } from '@fortawesome/free-solid-svg-icons';
 import Lottie from "lottie-react";
@@ -218,7 +219,7 @@ const ChatbotPage = () => {
     }, 55000);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/chat/", {
+      const response = await fetch(`${API_BASE}/api/chat/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -393,7 +394,7 @@ const ChatbotPage = () => {
           clearAllTimers();
         }, 55000); // 55 seconds timeout (backend is 50s + 5s buffer)
 
-        const response = await fetch("http://127.0.0.1:8000/api/chat/", {
+        const response = await fetch(`${API_BASE}/api/chat/`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -571,7 +572,7 @@ const ChatbotPage = () => {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/conversations/${conversationToDeleteId}/`,
+        `${API_BASE}/api/conversations/${conversationToDeleteId}/`,
         {
           method: 'DELETE',
           headers: {
@@ -606,7 +607,7 @@ const ChatbotPage = () => {
   // --- Logout ---
   const handleLogout = async () => {
     try {
-      await axios.post('http://127.0.0.1:8000/api/logout/', {}, { withCredentials: true });
+      await axios.post(`${API_BASE}/api/logout/`, {}, { withCredentials: true });
       setChatData({
         conversations: [],
         messages: [],

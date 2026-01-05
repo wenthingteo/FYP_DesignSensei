@@ -4,6 +4,7 @@ import useSidebarUpdates from '../hooks/useSidebarUpdates';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEllipsisVertical, faPen, faTrash, faCheck, faTimes } from "@fortawesome/free-solid-svg-icons";
 import axios from "axios";
+import API_BASE from "../config";
 
 function ConversationHistory({ onDeleteConfirmRequest }) {
   const { chatData, setChatData } = useGetChats();
@@ -77,7 +78,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
     }
 
     try {
-      const res = await axios.get(`http://127.0.0.1:8000/api/conversations/${conv.id}/messages/`, {
+      const res = await axios.get(`${API_BASE}/api/conversations/${conv.id}/messages/`, {
         withCredentials: true,
       });
       setChatData((prev) => ({
@@ -116,7 +117,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
       console.log(`Attempting to rename conversation ${convId} to "${editingTitle.trim()}"`);
       
       const response = await axios.put(
-        `http://127.0.0.1:8000/api/conversations/${convId}/`,
+        `${API_BASE}/api/conversations/${convId}/`,
         { 
           title: editingTitle.trim()
         },

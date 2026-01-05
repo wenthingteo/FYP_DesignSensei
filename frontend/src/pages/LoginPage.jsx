@@ -1,6 +1,7 @@
 import React, { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChatContext } from "../context/ChatContext";
+import API_BASE from "../config";
 
 function LoginPage() {
   const [username, setUsername] = useState("");
@@ -28,7 +29,7 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/login/", {
+      const response = await fetch(`${API_BASE}/api/login/`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -60,7 +61,7 @@ function LoginPage() {
     setAdminLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/login/", {
+      const response = await fetch(`${API_BASE}/api/login/`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -74,7 +75,7 @@ function LoginPage() {
       if (response.ok) {
         // Now check if user has admin access by trying to fetch feedback
         try {
-          const feedbackResponse = await fetch("http://127.0.0.1:8000/api/admin/feedback/", {
+          const feedbackResponse = await fetch(`${API_BASE}/api/admin/feedback/`, {
             method: "GET",
             credentials: "include",
           });
@@ -150,7 +151,7 @@ function LoginPage() {
     setResetLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/password-reset/request/", {
+      const response = await fetch(`${API_BASE}/api/password-reset/request/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

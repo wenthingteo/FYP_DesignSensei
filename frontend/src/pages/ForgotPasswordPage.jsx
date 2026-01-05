@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import API_BASE from '../config';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEnvelope, faArrowLeft } from '@fortawesome/free-solid-svg-icons';
 import '../colors.css';
@@ -32,7 +33,7 @@ const ForgotPasswordPage = () => {
     setIsLoading(true);
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/api/password-reset/request/', {
+      const response = await axios.post(`${API_BASE}/api/password-reset/request/`, {
         email: email.trim().toLowerCase()
       });
 
