@@ -68,7 +68,6 @@ INSTALLED_APPS = [
     'core',
     'corsheaders',
     'rest_framework',
-    'rest_framework_nested',
     'search_module',
     'knowledge_graph',
     'evaluation',
