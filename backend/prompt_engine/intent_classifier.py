@@ -75,7 +75,13 @@ class IntentClassifier:
             ],
             SoftwareDesignTopic.ARCHITECTURE: [
                 "architecture", "mvc", "microservices", "monolith", "layered",
-                "hexagonal", "clean architecture", "rest", "graphql", "api", "service"
+                "hexagonal", "clean architecture", "rest", "graphql", "api", "service",
+                # UML Diagrams - commonly used in software architecture/design
+                "uml", "diagram", "use case", "use case diagram", "class diagram", 
+                "sequence diagram", "activity diagram", "state diagram", "component diagram",
+                "deployment diagram", "object diagram", "communication diagram", 
+                "interaction diagram", "package diagram", "composite structure diagram",
+                "timing diagram", "actor", "swimlane", "flowchart"
             ],
             SoftwareDesignTopic.DDD: [
                 "ddd", "domain driven", "domain-driven", "aggregate", "value object", "entity", "repository", "bounded context"
