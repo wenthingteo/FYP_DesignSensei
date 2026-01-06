@@ -227,7 +227,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     onChange={(e) => setEditingTitle(e.target.value)}
                     onKeyDown={(e) => handleKeyPress(e, conv.id)}
                     className="form-control form-control-sm"
-                    style={{ fontSize: "16px" }}
+                    style={{ fontSize: "14px" }}
                     onClick={(e) => e.stopPropagation()}
                   />
                   <div className="d-flex gap-1">
@@ -284,7 +284,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                   right: '10px',
                   zIndex: 999,
                   padding: '6px 0',
-                  fontSize: '16px',
+                  fontSize: '13px',
                   minWidth: '120px'
                 }}
               >

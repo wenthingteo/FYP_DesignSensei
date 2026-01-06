@@ -629,8 +629,9 @@ const ChatbotPage = () => {
         ref={sidebarRef}
         className="position-fixed h-100 bg-light shadow"
         style={{
-          width: "350px",
-          left: sidebarOpen ? "0" : "-400px",
+          width: window.innerWidth <= 768 ? "85vw" : "350px",
+          maxWidth: "350px",
+          left: sidebarOpen ? "0" : "-100%",
           transition: "left 0.3s ease-in-out",
           zIndex: 1000,
         }}
