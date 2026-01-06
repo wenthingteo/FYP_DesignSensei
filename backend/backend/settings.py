@@ -15,6 +15,7 @@ from pathlib import Path
 import dj_database_url
 import logging
 from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -100,13 +101,18 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:3000",
+    "https://fyp-designsensei-327t.onrender.com",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:3000",
+    "https://fyp-designsensei-327t.onrender.com",
 ]
-
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'authorization',
+]
 
 TEMPLATES = [
     {
