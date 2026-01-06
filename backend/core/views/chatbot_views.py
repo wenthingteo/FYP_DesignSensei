@@ -4,6 +4,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 import logging
 import asyncio
 from asgiref.sync import sync_to_async
@@ -28,6 +30,7 @@ from evaluation.evaluation_service import EvaluationService
 logger = logging.getLogger(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+@method_decorator(csrf_exempt, name='dispatch')
 class ChatbotAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
