@@ -109,11 +109,16 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:3000",
     "https://fyp-designsensei-327t.onrender.com",
+    "https://fyp-designsensei.onrender.com",  # Add backend URL too
 ]
-CORS_ALLOW_CREDENTIALS = True
+
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'authorization',
+    'x-csrftoken',  # Explicitly allow CSRF token header
 ]
+
+# Additional CORS settings for better compatibility
+CORS_EXPOSE_HEADERS = ['Set-Cookie']
 
 TEMPLATES = [
     {
@@ -196,7 +201,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 SESSION_COOKIE_SECURE = True
 SESSION_COOKIE_SAMESITE = 'None'
 SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_DOMAIN = None  # Let browser handle it
 CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_HTTPONLY = False  # Must be False so JavaScript can read it
+CSRF_USE_SESSIONS = False  # Use cookie-based CSRF tokens
 SESSION_COOKIE_AGE = 1209600  # 2 weeks
 SESSION_SAVE_EVERY_REQUEST = True
 

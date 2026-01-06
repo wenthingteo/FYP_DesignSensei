@@ -31,6 +31,7 @@ urlpatterns = [
     path('ping/', auth_views.ping, name='api_ping'),
 
     # Auth-related API endpoints
+    path('csrf/', auth_views.get_csrf_token, name='get_csrf_token'),
     path('login/', auth_views.login, name='api_login'),
     path('register/', auth_views.register, name='api_register'),
     path('logout/', auth_views.logout, name='api_logout'),
