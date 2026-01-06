@@ -227,13 +227,13 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     onChange={(e) => setEditingTitle(e.target.value)}
                     onKeyDown={(e) => handleKeyPress(e, conv.id)}
                     className="form-control form-control-sm"
-                    style={{ fontSize: "14px" }}
+                    style={{ fontSize: "1rem" }}
                     onClick={(e) => e.stopPropagation()}
                   />
                   <div className="d-flex gap-1">
                     <FontAwesomeIcon 
                       icon={faCheck} 
-                      style={{ color: "#28a745", fontSize: "12px", cursor: 'pointer' }}
+                      style={{ color: "#28a745", fontSize: "0.85rem", cursor: 'pointer' }}
                       onClick={(e) => {
                         e.stopPropagation();
                         saveRename(conv.id);
@@ -241,7 +241,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     />
                     <FontAwesomeIcon 
                       icon={faTimes} 
-                      style={{ color: "#dc3545", fontSize: "12px", cursor: 'pointer' }}
+                      style={{ color: "#dc3545", fontSize: "0.85rem", cursor: 'pointer' }}
                       onClick={(e) => {
                         e.stopPropagation();
                         cancelRename();
@@ -269,7 +269,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     e.stopPropagation();
                     toggleMenu(conv.id);
                   }}>
-                    <FontAwesomeIcon icon={faEllipsisVertical} style={{ color: "#999", fontSize: "14px", cursor: 'pointer' }} />
+                    <FontAwesomeIcon icon={faEllipsisVertical} style={{ color: "#999", fontSize: "1rem", cursor: 'pointer' }} />
                   </div>
                 </>
               )}
@@ -284,7 +284,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                   right: '10px',
                   zIndex: 999,
                   padding: '6px 0',
-                  fontSize: '13px',
+                  fontSize: '0.93rem',
                   minWidth: '120px'
                 }}
               >
@@ -304,7 +304,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
-                  <FontAwesomeIcon icon={faPen} style={{ fontSize: '14px' }} />
+                  <FontAwesomeIcon icon={faPen} style={{ fontSize: '1rem' }} />
                   <span>Rename</span>
                 </div>
                 <div
@@ -323,7 +323,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
-                  <FontAwesomeIcon icon={faTrash} style={{ fontSize: '14px' }} />
+                  <FontAwesomeIcon icon={faTrash} style={{ fontSize: '1rem' }} />
                   <span>Delete</span>
                 </div>
               </div>
