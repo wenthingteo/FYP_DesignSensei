@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import API_BASE from "../config";
+import axios from "axios";
+import { setTokens } from "../utils/auth";
 
 function RegisterPage() {
   const [username, setUsername] = useState("");
@@ -35,26 +37,20 @@ function RegisterPage() {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE}/api/register/`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username, email, password1: password, password2: confirmPassword }),
+      const response = await axios.post(`${API_BASE}/api/register/`, {
+        username,
+        email,
+        password1: password,
+        password2: confirmPassword
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        console.log("Registration success:", data);
-        navigate("/login");
-      } else {
-        setErrorMsg(data.error || "Registration failed.");
-      }
+      const { access, refresh } = response.data;
+      setTokens(access, refresh);
+      console.log("Registration success");
+      navigate("/chatbot");
     } catch (error) {
       console.error("Registration error:", error);
-      setErrorMsg("Something went wrong. Please try again.");
+      setErrorMsg(error.response?.data?.error || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }

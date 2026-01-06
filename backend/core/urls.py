@@ -1,8 +1,9 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_nested.routers import NestedDefaultRouter
+from rest_framework_simplejwt.views import TokenRefreshView
 
-from core.views import auth_views
+from core.views import jwt_auth_views
 from core.views.api_views import ConversationViewSet, MessageViewSet
 from core.views.chatbot_views import ChatbotAPIView
 from core.views.feedback_views import FeedbackView, AdminFeedbackView
@@ -28,13 +29,13 @@ convo_router.register(r'messages', MessageViewSet, basename='conversation-messag
 
 urlpatterns = [
     # Health check
-    path('ping/', auth_views.ping, name='api_ping'),
+    path('ping/', jwt_auth_views.ping, name='api_ping'),
 
-    # Auth-related API endpoints
-    path('csrf/', auth_views.get_csrf_token, name='get_csrf_token'),
-    path('login/', auth_views.login, name='api_login'),
-    path('register/', auth_views.register, name='api_register'),
-    path('logout/', auth_views.logout, name='api_logout'),
+    # JWT Auth endpoints
+    path('register/', jwt_auth_views.register, name='api_register'),
+    path('login/', jwt_auth_views.login, name='api_login'),
+    path('logout/', jwt_auth_views.logout, name='api_logout'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     
     # Password reset endpoints
     path('password-reset/request/', PasswordResetRequestView.as_view(), name='password_reset_request'),

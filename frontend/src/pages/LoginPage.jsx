@@ -2,6 +2,8 @@ import React, { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChatContext } from "../context/ChatContext";
 import API_BASE from "../config";
+import axios from "axios";
+import { setTokens } from "../utils/auth";
 
 function LoginPage() {
   const [username, setUsername] = useState("");
@@ -29,27 +31,24 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE}/api/login/`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username, password }),
+      const response = await axios.post(`${API_BASE}/api/login/`, {
+        username,
+        password
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        console.log("Login success:", data);
+      if (response.status === 200) {
+        const { access, refresh, username: user } = response.data;
+        
+        // Store JWT tokens
+        setTokens(access, refresh);
+        
+        console.log("Login success:", user);
         await fetchChats();
         navigate("/chatbot");
-      } else {
-        setErrorMsg(data.error || "Invalid credentials.");
       }
     } catch (error) {
       console.error("Login error:", error);
-      setErrorMsg("Something went wrong. Please try again.");
+      setErrorMsg(error.response?.data?.error || "Invalid credentials.");
     } finally {
       setLoading(false);
     }

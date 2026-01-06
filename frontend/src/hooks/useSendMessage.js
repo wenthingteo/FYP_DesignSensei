@@ -1,5 +1,6 @@
 import axios from "axios";
 import API_BASE from "../config";
+import { getAccessToken } from "../utils/auth";
 
 const useSendMessage = (
   chatData, 
@@ -75,13 +76,13 @@ const useSendMessage = (
     }, 60000); // 60 seconds timeout
 
     try {
+      const token = getAccessToken();
       const res = await axios.post(`${API_BASE}/api/chat/`, {
         content: content,
         conversation: chatData.currentConversation,
       }, {
-        withCredentials: true,
         headers: {
-          'X-CSRFToken': getCookie('csrftoken'),
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         signal: abortControllerRef ? abortControllerRef.current.signal : undefined,
