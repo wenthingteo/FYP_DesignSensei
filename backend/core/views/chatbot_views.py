@@ -1,9 +1,10 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import status
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+from django.contrib.auth.models import User
 import logging
 import asyncio
 from asgiref.sync import sync_to_async
@@ -28,8 +29,33 @@ from evaluation.evaluation_service import EvaluationService
 logger = logging.getLogger(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+
+def get_or_create_test_user():
+    """Get or create a default test user for anonymous access in DEBUG mode."""
+    user, created = User.objects.get_or_create(
+        username='test_user',
+        defaults={'email': 'test@local.dev', 'is_active': True}
+    )
+    if created:
+        user.set_password('testpassword123')
+        user.save()
+        logger.info("Created default test user for local development")
+    return user
+
+
 class ChatbotAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    
+    def get_authenticators(self):
+        """Skip JWT authentication in DEBUG mode for local development."""
+        if settings.DEBUG:
+            return []  # No authentication required
+        return super().get_authenticators()
+    
+    def get_permissions(self):
+        """Allow unauthenticated access in DEBUG mode for local development."""
+        if settings.DEBUG:
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -38,12 +64,14 @@ class ChatbotAPIView(APIView):
 
         self.neo4j_client = None
         self.graph_search_service = None
+        self.neo4j_available = False
         try:
             self.neo4j_client = Neo4jClient()
             self.graph_search_service = GraphSearchService(self.neo4j_client)
+            self.neo4j_available = True
             logger.info("ChatbotAPIView: Neo4jClient and GraphSearchService initialized successfully.")
         except Exception as e:
-            logger.error(f"ChatbotAPIView: Failed to initialize Neo4jClient or GraphSearchService: {e}", exc_info=True)
+            logger.warning(f"ChatbotAPIView: Neo4j unavailable, running in degraded mode (no graph search): {e}")
 
     def _generate_conversation_title(self, message_text):
         """
@@ -361,17 +389,26 @@ class ChatbotAPIView(APIView):
         if not message_text:
             return Response({"error": "Message is required"}, status=400)
 
+        # Handle anonymous users in DEBUG mode - use test user
+        if request.user.is_authenticated:
+            user = request.user
+        elif settings.DEBUG:
+            user = get_or_create_test_user()
+            logger.info(f"Using test user for anonymous request in DEBUG mode")
+        else:
+            return Response({"error": "Authentication required"}, status=401)
+        
         # Create or fetch conversation
         if conversation_id:
             conversation = get_object_or_404(
                 Conversation,
                 id=conversation_id,
-                user=request.user
+                user=user
             )
             is_new_conversation = False
         else:
             conversation = Conversation.objects.create(
-                user=request.user,
+                user=user,
                 title="Generating title...",
                 created_at=timezone.now(),
             )
@@ -595,11 +632,19 @@ class ChatbotAPIView(APIView):
         """Get all conversations and optionally messages from one"""
         conversation_id = request.query_params.get('cid')
 
-        conversations = Conversation.objects.filter(user=request.user).order_by('-created_at')
+        # Handle anonymous users in DEBUG mode
+        if request.user.is_authenticated:
+            user = request.user
+        elif settings.DEBUG:
+            user = get_or_create_test_user()
+        else:
+            return Response({"error": "Authentication required"}, status=401)
+
+        conversations = Conversation.objects.filter(user=user).order_by('-created_at')
         serialized_conversations = ConversationSerializer(conversations, many=True).data
 
         if conversation_id:
-            conversation = get_object_or_404(Conversation, id=conversation_id, user=request.user)
+            conversation = get_object_or_404(Conversation, id=conversation_id, user=user)
             messages = Message.objects.filter(conversation=conversation).order_by('created_at')
             serialized_messages = MessageSerializer(messages, many=True).data
 
@@ -623,7 +668,15 @@ class ChatbotAPIView(APIView):
         if not conversation_id or not new_title:
             return Response({'error': 'Conversation ID and new title are required'}, status=400)
 
-        conversation = get_object_or_404(Conversation, id=conversation_id, user=request.user)
+        # Handle anonymous users in DEBUG mode
+        if request.user.is_authenticated:
+            user = request.user
+        elif settings.DEBUG:
+            user = get_or_create_test_user()
+        else:
+            return Response({"error": "Authentication required"}, status=401)
+
+        conversation = get_object_or_404(Conversation, id=conversation_id, user=user)
         conversation.title = new_title
         conversation.save()
 
@@ -636,7 +689,15 @@ class ChatbotAPIView(APIView):
         if not conversation_id:
             return Response({'error': 'Conversation ID is required'}, status=400)
 
-        conversation = get_object_or_404(Conversation, id=conversation_id, user=request.user)
+        # Handle anonymous users in DEBUG mode
+        if request.user.is_authenticated:
+            user = request.user
+        elif settings.DEBUG:
+            user = get_or_create_test_user()
+        else:
+            return Response({"error": "Authentication required"}, status=401)
+
+        conversation = get_object_or_404(Conversation, id=conversation_id, user=user)
         conversation.delete()
 
         return Response({'message': 'Conversation deleted successfully'})
