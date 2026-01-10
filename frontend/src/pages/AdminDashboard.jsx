@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import API_BASE from '../config';
+import { getAccessToken, clearTokens } from '../utils/auth';
 import './AdminDashboard.css';
 
 function AdminDashboard() {
@@ -17,8 +18,11 @@ function AdminDashboard() {
 
   const fetchFeedbacks = async () => {
     try {
+      const token = getAccessToken();
       const response = await axios.get(`${API_BASE}/api/admin/feedback/`, {
-        withCredentials: true,
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
       
       if (response.data.success) {
@@ -42,20 +46,6 @@ function AdminDashboard() {
     }
   };
 
-  const getCookie = (name) => {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-      const cookies = document.cookie.split(';');
-      for (let i = 0; i < cookies.length; i++) {
-        const cookie = cookies[i].trim();
-        if (cookie.substring(0, name.length + 1) === (name + '=')) {
-          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-          break;
-        }
-      }
-    }
-    return cookieValue;
-  };
 
   const handleDelete = async (feedbackId) => {
     if (!window.confirm('Are you sure you want to delete this feedback?')) {
@@ -63,12 +53,11 @@ function AdminDashboard() {
     }
 
     try {
-      const csrfToken = getCookie('csrftoken');
+      const token = getAccessToken();
       await axios.delete(`${API_BASE}/api/admin/feedback/${feedbackId}/`, {
-        withCredentials: true,
         headers: {
-          'X-CSRFToken': csrfToken,
-        },
+          'Authorization': `Bearer ${token}`
+        }
       });
       
       // Remove from local state
