@@ -60,44 +60,41 @@ function LoginPage() {
     setAdminLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE}/api/login/`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username: adminUsername, password: adminPassword }),
+      const response = await axios.post(`${API_BASE}/api/login/`, {
+        username: adminUsername,
+        password: adminPassword
       });
 
-      const data = await response.json();
+      if (response.status === 200) {
+        const { access, refresh, username: user } = response.data;
+        
+        // Store JWT tokens
+        setTokens(access, refresh);
 
-      if (response.ok) {
         // Now check if user has admin access by trying to fetch feedback
         try {
-          const feedbackResponse = await fetch(`${API_BASE}/api/admin/feedback/`, {
-            method: "GET",
-            credentials: "include",
+          const feedbackResponse = await axios.get(`${API_BASE}/api/admin/feedback/`, {
+            headers: {
+              'Authorization': `Bearer ${access}`
+            }
           });
 
-          if (feedbackResponse.ok) {
+          if (feedbackResponse.status === 200) {
             // User is admin, navigate to dashboard
             setShowAdminModal(false);
             navigate("/admin/feedback");
-          } else if (feedbackResponse.status === 403) {
+          }
+        } catch (feedbackError) {
+          if (feedbackError.response?.status === 403) {
             setAdminError("Access denied. Admin privileges required.");
           } else {
             setAdminError("Failed to verify admin access.");
           }
-        } catch (error) {
-          console.error("Admin verification error:", error);
-          setAdminError("Failed to verify admin access.");
         }
-      } else {
-        setAdminError(data.error || "Invalid credentials");
       }
     } catch (error) {
       console.error("Admin login error:", error);
-      setAdminError("Something went wrong. Please try again.");
+      setAdminError(error.response?.data?.error || "Invalid credentials");
     } finally {
       setAdminLoading(false);
     }
