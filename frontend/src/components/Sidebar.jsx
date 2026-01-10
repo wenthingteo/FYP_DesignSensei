@@ -19,11 +19,11 @@ const Sidebar = ({ onDeleteConfirmRequest }) => {
   };
 
   return (
-    <div className="d-flex flex-column min-vh-100 p-3 bg-grey-1" style={{ width: '350px' }}>
+    <div className="d-flex flex-column min-vh-100 p-3 bg-grey-1" style={{ width: '100%', maxWidth: '350px' }}>
       {/* Header */}
       <div className="d-flex align-items-center justify-content-between mb-4">
         <div className="d-flex align-items-center gap-2">
-          <div style={{ fontSize: '20px', fontWeight: '600', color: '#333' }}>Software Design Sensei</div>
+          <div style={{ fontSize: '1.15rem', fontWeight: '600', color: '#333' }}>Software Design Sensei</div>
           <div
             className="rounded-circle overflow-hidden justify-content-between"
             style={{
@@ -57,7 +57,7 @@ const Sidebar = ({ onDeleteConfirmRequest }) => {
           className="d-flex align-items-center rounded-5 px-3 py-2 bg-blue-dark text-white"
           style={{
             gap: '8px',
-            fontSize: '20px',
+            fontSize: '1rem',
             cursor: 'pointer',
             flexGrow: 1,
             transition: 'background-color 0.2s ease-in-out',
@@ -95,8 +95,8 @@ const Sidebar = ({ onDeleteConfirmRequest }) => {
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#e0e0e0')}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
         >
-          <FontAwesomeIcon icon={faCommentDots} style={{ color: '#666', fontSize: '18px' }} />
-          <span className="d-flex align-items-center" style={{ fontSize: '18px', color: '#333' }}>
+          <FontAwesomeIcon icon={faCommentDots} style={{ color: '#666', fontSize: '1rem' }} />
+          <span className="d-flex align-items-center" style={{ fontSize: '1rem', color: '#333' }}>
             Feedback
           </span>
         </div>

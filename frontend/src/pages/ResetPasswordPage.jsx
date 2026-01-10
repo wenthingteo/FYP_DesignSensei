@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import API_BASE from '../config';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLock, faEye, faEyeSlash, faCheckCircle } from '@fortawesome/free-solid-svg-icons';
 import '../colors.css';
@@ -35,7 +36,7 @@ const ResetPasswordPage = () => {
 
       try {
         const response = await axios.get(
-          `http://127.0.0.1:8000/api/password-reset/validate/?token=${token}`
+          `${API_BASE}/api/password-reset/validate/?token=${token}`
         );
 
         if (response.data.valid) {
@@ -78,7 +79,7 @@ const ResetPasswordPage = () => {
     setIsLoading(true);
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/api/password-reset/confirm/', {
+      const response = await axios.post(`${API_BASE}/api/password-reset/confirm/`, {
         token: token,
         new_password: newPassword
       });

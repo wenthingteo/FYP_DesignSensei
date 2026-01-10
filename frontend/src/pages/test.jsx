@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
 import axios from 'axios';
+import API_BASE from '../config';
 
 const TestConnection = () => {
   useEffect(() => {
-    axios.get('http://localhost:8000/api/ping/')
+    axios.get(`${API_BASE}/api/ping/`)
       .then(res => {
         console.log("Backend is connected:", res.data);
       })

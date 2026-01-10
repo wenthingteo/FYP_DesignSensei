@@ -4,6 +4,8 @@ import useSidebarUpdates from '../hooks/useSidebarUpdates';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEllipsisVertical, faPen, faTrash, faCheck, faTimes } from "@fortawesome/free-solid-svg-icons";
 import axios from "axios";
+import API_BASE from "../config";
+import { getAccessToken } from "../utils/auth";
 
 function ConversationHistory({ onDeleteConfirmRequest }) {
   const { chatData, setChatData } = useGetChats();
@@ -77,8 +79,11 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
     }
 
     try {
-      const res = await axios.get(`http://127.0.0.1:8000/api/conversations/${conv.id}/messages/`, {
-        withCredentials: true,
+      const token = getAccessToken();
+      const res = await axios.get(`${API_BASE}/api/conversations/${conv.id}/messages/`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
       setChatData((prev) => ({
         ...prev,
@@ -115,15 +120,15 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
     try {
       console.log(`Attempting to rename conversation ${convId} to "${editingTitle.trim()}"`);
       
+      const token = getAccessToken();
       const response = await axios.put(
-        `http://127.0.0.1:8000/api/conversations/${convId}/`,
+        `${API_BASE}/api/conversations/${convId}/`,
         { 
           title: editingTitle.trim()
         },
         { 
-          withCredentials: true, 
           headers: { 
-            'X-CSRFToken': getCookie('csrftoken'), 
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json' 
           } 
         }
@@ -222,13 +227,13 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     onChange={(e) => setEditingTitle(e.target.value)}
                     onKeyDown={(e) => handleKeyPress(e, conv.id)}
                     className="form-control form-control-sm"
-                    style={{ fontSize: "16px" }}
+                    style={{ fontSize: "1rem" }}
                     onClick={(e) => e.stopPropagation()}
                   />
                   <div className="d-flex gap-1">
                     <FontAwesomeIcon 
                       icon={faCheck} 
-                      style={{ color: "#28a745", fontSize: "12px", cursor: 'pointer' }}
+                      style={{ color: "#28a745", fontSize: "0.85rem", cursor: 'pointer' }}
                       onClick={(e) => {
                         e.stopPropagation();
                         saveRename(conv.id);
@@ -236,7 +241,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     />
                     <FontAwesomeIcon 
                       icon={faTimes} 
-                      style={{ color: "#dc3545", fontSize: "12px", cursor: 'pointer' }}
+                      style={{ color: "#dc3545", fontSize: "0.85rem", cursor: 'pointer' }}
                       onClick={(e) => {
                         e.stopPropagation();
                         cancelRename();
@@ -264,7 +269,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     e.stopPropagation();
                     toggleMenu(conv.id);
                   }}>
-                    <FontAwesomeIcon icon={faEllipsisVertical} style={{ color: "#999", fontSize: "14px", cursor: 'pointer' }} />
+                    <FontAwesomeIcon icon={faEllipsisVertical} style={{ color: "#999", fontSize: "1rem", cursor: 'pointer' }} />
                   </div>
                 </>
               )}
@@ -279,7 +284,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                   right: '10px',
                   zIndex: 999,
                   padding: '6px 0',
-                  fontSize: '16px',
+                  fontSize: '0.93rem',
                   minWidth: '120px'
                 }}
               >
@@ -299,7 +304,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
-                  <FontAwesomeIcon icon={faPen} style={{ fontSize: '14px' }} />
+                  <FontAwesomeIcon icon={faPen} style={{ fontSize: '1rem' }} />
                   <span>Rename</span>
                 </div>
                 <div
@@ -318,7 +323,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
                     e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
-                  <FontAwesomeIcon icon={faTrash} style={{ fontSize: '14px' }} />
+                  <FontAwesomeIcon icon={faTrash} style={{ fontSize: '1rem' }} />
                   <span>Delete</span>
                 </div>
               </div>

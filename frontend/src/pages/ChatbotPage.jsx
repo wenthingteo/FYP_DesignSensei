@@ -1,6 +1,8 @@
 import React, { useContext, useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from 'react-router-dom';
 import axios from "axios";
+import API_BASE from "../config";
+import { getAccessToken, clearTokens } from "../utils/auth";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBars, faPaperPlane, faSignOutAlt } from '@fortawesome/free-solid-svg-icons';
 import Lottie from "lottie-react";
@@ -218,13 +220,13 @@ const ChatbotPage = () => {
     }, 55000);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/chat/", {
+      const token = getAccessToken();
+      const response = await fetch(`${API_BASE}/api/chat/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-CSRFToken": getCookie("csrftoken"),
+          "Authorization": `Bearer ${token}`,
         },
-        credentials: "include",
         signal: abortControllerRef.current.signal,
         body: JSON.stringify({
           content: lastUserMessage,
@@ -393,7 +395,7 @@ const ChatbotPage = () => {
           clearAllTimers();
         }, 55000); // 55 seconds timeout (backend is 50s + 5s buffer)
 
-        const response = await fetch("http://127.0.0.1:8000/api/chat/", {
+        const response = await fetch(`${API_BASE}/api/chat/`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -570,15 +572,15 @@ const ChatbotPage = () => {
     if (!conversationToDeleteId) return;
 
     try {
+      const token = getAccessToken();
       const response = await fetch(
-        `http://127.0.0.1:8000/api/conversations/${conversationToDeleteId}/`,
+        `${API_BASE}/api/conversations/${conversationToDeleteId}/`,
         {
           method: 'DELETE',
           headers: {
-            'X-CSRFToken': getCookie('csrftoken'),
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
-          },
-          credentials: 'include'
+          }
         }
       );
 
@@ -606,7 +608,8 @@ const ChatbotPage = () => {
   // --- Logout ---
   const handleLogout = async () => {
     try {
-      await axios.post('http://127.0.0.1:8000/api/logout/', {}, { withCredentials: true });
+      await axios.post(`${API_BASE}/api/logout/`);
+      clearTokens();
       setChatData({
         conversations: [],
         messages: [],
@@ -626,8 +629,9 @@ const ChatbotPage = () => {
         ref={sidebarRef}
         className="position-fixed h-100 bg-light shadow"
         style={{
-          width: "350px",
-          left: sidebarOpen ? "0" : "-400px",
+          width: window.innerWidth <= 768 ? "85vw" : "350px",
+          maxWidth: "350px",
+          left: sidebarOpen ? "0" : "-100%",
           transition: "left 0.3s ease-in-out",
           zIndex: 1000,
         }}
@@ -653,7 +657,7 @@ const ChatbotPage = () => {
           ref={toggleButtonRef}
           onClick={() => setSidebarOpen(!sidebarOpen)}
         />
-        <h1 className="fs-3 text-center flex-grow-1 m-0">
+        <h1 style={{ fontSize: '1.25rem', fontWeight: '600' }} className="text-center flex-grow-1 m-0">
           {currentConv?.title || "Software Design Sensei"}
         </h1>
         <div style={{ width: "24px" }} />
@@ -672,23 +676,23 @@ const ChatbotPage = () => {
         ) : (
           <div className={`d-flex flex-grow-1 chat-content ${transitioning ? 'chat-content-enter' : ''}`}>
             {/* Robot */}
-            <div className="d-flex justify-content-center align-items-center" style={{ width: "30%", flexShrink: 0 }}>
+            <div className="d-none d-lg-flex justify-content-center align-items-center" style={{ width: "25%", flexShrink: 0 }}>
               <div style={{ width: "100%", height: "auto", maxWidth: "100%", maxHeight: "100%" }}>
                 <Lottie animationData={robotAnimation} loop />
               </div>
             </div>
 
             {/* Messages */}
-            <div className="flex-grow-1 overflow-auto d-flex flex-column gap-3 px-5 py-3">
+            <div className="flex-grow-1 overflow-auto d-flex flex-column gap-3 px-3 px-lg-5 py-3">
               {currentMessages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`px-3 py-2 rounded fs-5 message-fade-in ${
+                  className={`px-3 py-2 rounded message-fade-in ${
                     msg.sender === "bot"
                       ? "bg-white align-self-start"
                       : "bg-blue-light text-black align-self-end"
                   }`}
-                  style={{ maxWidth: msg.sender === "bot" ? "100%" : "80%" }}
+                  style={{ maxWidth: msg.sender === "bot" ? "100%" : "80%", fontSize: '1rem' }}
                 >
                   {msg.sender === "bot" ? (
                     <div className="markdown-content mb-0">
@@ -713,15 +717,15 @@ const ChatbotPage = () => {
               )}  
               {isTyping && (
                 <div
-                  className="px-3 py-2 rounded fs-5 bg-white align-self-start message-fade-in d-flex align-items-center gap-2"
-                  style={{ maxWidth: "100%" }}
+                  className="px-3 py-2 rounded bg-white align-self-start message-fade-in d-flex align-items-center gap-2"
+                  style={{ maxWidth: "100%", fontSize: '1rem' }}
                 >
                   {/* Bootstrap spinner - only show when no content yet */}
                   {!typingMessageContent && (
                     <div
                       className="spinner-border text-primary"
                       role="status"
-                      style={{ width: "1.2rem", height: "1.2rem" }}
+                      style={{ width: "1rem", height: "1rem" }}
                     >
                       <span className="visually-hidden">Loading...</span>
                     </div>
@@ -755,12 +759,12 @@ const ChatbotPage = () => {
       />
 
       {/* Chat Input */}
-      <div style={{ padding: "1.5rem 2rem", backgroundColor: "#ffffff" }}>
+      <div style={{ padding: "1rem 1rem", backgroundColor: "#ffffff" }}>
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "1rem",
+            gap: "0.75rem",
             maxWidth: "1200px",
             margin: "0 auto",
           }}
@@ -785,11 +789,11 @@ const ChatbotPage = () => {
               disabled={isTyping}
               style={{
                 width: "100%",
-                padding: "1.125rem 1.5rem",
+                padding: "0.875rem 1.25rem",
                 border: "none",
                 borderRadius: "1.5rem",
                 backgroundColor: "transparent",
-                fontSize: "1.125rem",
+                fontSize: "1rem",
                 outline: "none",
                 color: "#334155",
               }}
@@ -805,8 +809,8 @@ const ChatbotPage = () => {
           </div>
           <button
             style={{
-              width: "3rem",
-              height: "3rem",
+              width: "2.5rem",
+              height: "2.5rem",
               borderRadius: "50%",
               border: "none",
               color: "white",

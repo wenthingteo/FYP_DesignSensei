@@ -1,11 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
+html {
+  font-size: 14px; /* Base font size - adjust this to make everything smaller/larger */
+}
 
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;
+  font-size: 1rem; /* Relative to html font-size */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%; /* Prevent font scaling in landscape */
+  text-size-adjust: 100%;
 }
 
 code {
