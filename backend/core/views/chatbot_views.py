@@ -277,7 +277,7 @@ class ChatbotAPIView(APIView):
                 fallback_response = client.chat.completions.create(
                     model="gpt-4.1-nano-2025-04-14",
                     messages=messages,
-                    max_tokens=400,
+                    max_tokens=150,
                     temperature=0.2,
                     timeout=5  # Fast timeout
                 )
@@ -296,8 +296,8 @@ class ChatbotAPIView(APIView):
                     "Below is partial but not fully confident knowledge graph info. "
                     "Use it ONLY as supporting hints.\n\n"
                     f"Graph Insights:\n{graph_summary}\n\n"
-                    "Answer the user's question clearly.\n"
-                    "IMPORTANT: Use conversation history to understand references like 'it', 'that', 'this', etc."
+                    "Answer the user's question clearly and concisely.\n"
+                    "IMPORTANT: Keep your response focused and under 400 words. Use conversation history to understand references like 'it', 'that', 'this', etc."
                 )
 
                 # Build messages with conversation history
@@ -319,7 +319,7 @@ class ChatbotAPIView(APIView):
                 hybrid_response = client.chat.completions.create(
                     model="gpt-4.1-nano-2025-04-14",
                     messages=messages,
-                    max_tokens=2000,
+                    max_tokens=400,
                     temperature=0.25,
                     timeout=10
                 )

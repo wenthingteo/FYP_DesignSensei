@@ -31,17 +31,17 @@ class ResponseController:
         
         self.length_rules = {
             ResponseLength.SHORT: {
-                'max_tokens': 300,
+                'max_tokens': 150,
                 'max_examples': 1,
                 'include_followup': False
             },
             ResponseLength.MEDIUM: {
-                'max_tokens': 800,
+                'max_tokens': 400,
                 'max_examples': 2,
                 'include_followup': True
             },
             ResponseLength.DETAILED: {
-                'max_tokens': 1500,
+                'max_tokens': 800,
                 'max_examples': 3,
                 'include_followup': True
             }

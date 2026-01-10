@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import API_BASE from "../config";
-import { getAccessToken, clearTokens } from "../utils/auth";
 import "./AdminDashboard.css";
 
 function AdminDashboard() {
@@ -12,11 +11,7 @@ function AdminDashboard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchFeedbacks();
-  }, []);
-
-  const fetchFeedbacks = async () => {
+  const fetchFeedbacks = useCallback(async () => {
     try {
       const response = await axios.get(`${API_BASE}/api/admin/feedback/`, {
         withCredentials: true,
@@ -41,7 +36,11 @@ function AdminDashboard() {
       }
       setLoading(false);
     }
-  };
+  }, [navigate]);
+
+  useEffect(() => {
+    fetchFeedbacks();
+  }, [fetchFeedbacks]);
 
   const getCookie = (name) => {
     let cookieValue = null;

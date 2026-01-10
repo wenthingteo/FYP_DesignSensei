@@ -337,7 +337,7 @@ const ChatbotPage = () => {
   }, [lastUserMessage, currentConversation, setChatData, clearAllTimers]);
 
   // --- Send message (main logic) ---
-  const handleSend = async (messageContentToSend = inputValue.trim()) => {
+  const handleSend = useCallback(async (messageContentToSend = inputValue.trim()) => {
     if (!messageContentToSend) return;
     setInputValue("");
 
@@ -518,7 +518,7 @@ const ChatbotPage = () => {
       setShowWelcomePage(false);
     }
     await sendMessage(messageContentToSend);
-  };
+  }, [inputValue, chatData, setInputValue, setLastUserMessage, setChatData, setIsTyping, setTypingMessageContent, setErrorState, setErrorMessage, showWelcomePage, setShowWelcomePage, sendMessage]);
 
   // --- Cleanup on unmount ---
   useEffect(() => {

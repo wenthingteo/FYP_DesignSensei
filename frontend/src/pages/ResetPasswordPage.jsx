@@ -78,7 +78,7 @@ const ResetPasswordPage = () => {
     setIsLoading(true);
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/api/password-reset/confirm/', {
+      await axios.post('http://127.0.0.1:8000/api/password-reset/confirm/', {
         token: token,
         new_password: newPassword
       });

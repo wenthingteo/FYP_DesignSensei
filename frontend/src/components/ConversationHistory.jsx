@@ -62,7 +62,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
         }));
       }
     }
-  }, [updateTrigger, setChatData]);
+  }, [updateTrigger, setChatData, conversations]);
 
   const handleConversationClick = async (conv) => {
     if (editingId) return;
