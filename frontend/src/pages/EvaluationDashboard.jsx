@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import API_BASE from "../config";
-import { getAccessToken } from "../utils/auth";
 import "./EvaluationDashboard.css";
 
 function EvaluationDashboard() {
@@ -15,14 +14,13 @@ function EvaluationDashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      const token = getAccessToken();
-      const headers = { Authorization: `Bearer ${token}` };
-
-      // Fetch both dashboard and performance report
+      // Fetch both dashboard and performance report using session authentication
       const [dashboardRes, reportRes] = await Promise.all([
-        axios.get(`${API_BASE}/api/evaluation/dashboard/`, { headers }),
+        axios.get(`${API_BASE}/api/evaluation/dashboard/`, { 
+          withCredentials: true 
+        }),
         axios.get(`${API_BASE}/api/evaluation/performance-report/`, {
-          headers,
+          withCredentials: true
         }),
       ]);
 
