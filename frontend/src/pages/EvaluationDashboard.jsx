@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import API_BASE from "../config";
+import { getAccessToken } from "../utils/auth";
 import "./EvaluationDashboard.css";
 
 function EvaluationDashboard() {
@@ -14,13 +15,18 @@ function EvaluationDashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      // Fetch both dashboard and performance report using session authentication
+      const token = getAccessToken();
+      // Fetch both dashboard and performance report using JWT token authentication
       const [dashboardRes, reportRes] = await Promise.all([
         axios.get(`${API_BASE}/api/evaluation/dashboard/`, { 
-          withCredentials: true 
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }),
         axios.get(`${API_BASE}/api/evaluation/performance-report/`, {
-          withCredentials: true
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }),
       ]);
 

@@ -4,20 +4,20 @@
   padding: 2rem;
 }
 
-.dashboard-header {
+.admin-dashboard .dashboard-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 2rem;
-  background: white;
+  background: #2d3748;
   padding: 1.5rem 2rem;
   border-radius: 12px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-.dashboard-header h1 {
+.admin-dashboard.dashboard-header h1 {
   margin: 0;
-  color: #333;
+  color: white;
   font-size: 1.75rem;
 }
 
