@@ -1,4 +1,6 @@
-# Link to repository: https://github.com/wenthingteo/FYP_DesignSensei
+# Name: Tan Kerry
+# Matric No: 22004835
+# Repository: https://github.com/wenthingteo/FYP_DesignSensei
 
 # Base image - Using Python 3.9 slim for Django backend
 FROM python:3.9-slim
