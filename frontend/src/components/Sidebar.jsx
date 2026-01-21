@@ -1,8 +1,8 @@
-import React, { useContext } from "react";
+import React, { useContext, useState } from "react";
 import '../colors.css';
 import usagi from '../assets/usagi.png';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faCommentDots, faSearch } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faCommentDots, faSearch, faTimes } from '@fortawesome/free-solid-svg-icons';
 import ConversationHistory from "./ConversationHistory";
 import { useNavigate } from 'react-router-dom';
 import useCreateChat from '../hooks/useCreateChat';
@@ -13,9 +13,18 @@ const Sidebar = ({ onDeleteConfirmRequest }) => {
   const navigate = useNavigate();
   const { setChatData } = useContext(ChatContext);
   const createNewChat = useCreateChat(setChatData);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
 
   const handleFeedbackClick = () => {
     navigate('/feedback');
+  };
+
+  const toggleSearch = () => {
+    setShowSearch(!showSearch);
+    if (showSearch) {
+      setSearchQuery(""); // Clear search when closing
+    }
   };
 
   return (
@@ -28,39 +37,65 @@ const Sidebar = ({ onDeleteConfirmRequest }) => {
       </div>
 
       {/* New Chat & Search */}
-      <div className="d-flex align-items-center justify-content-between mb-3 gap-3">
-        <div
-          className="d-flex align-items-center rounded-5 px-3 py-2 bg-blue-dark text-white"
-          style={{
-            gap: '8px',
-            fontSize: '20px',
-            cursor: 'pointer',
-            flexGrow: 1,
-            transition: 'background-color 0.2s ease-in-out',
-          }}
-          onClick={createNewChat}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2C5E97')}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#3980D0')}
-        >
-          <FontAwesomeIcon icon={faPlus} size="sm" />
-          <span>New Chat</span>
+      <div className="mb-3">
+        <div className="d-flex align-items-center gap-3 mb-2">
+          <div
+            className="d-flex align-items-center rounded-5 px-3 py-2 bg-blue-dark text-white"
+            style={{
+              gap: '8px',
+              fontSize: '20px',
+              cursor: 'pointer',
+              flexGrow: 1,
+              transition: 'background-color 0.2s ease-in-out',
+            }}
+            onClick={createNewChat}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2C5E97')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#3980D0')}
+          >
+            <FontAwesomeIcon icon={faPlus} size="sm" />
+            <span>New Chat</span>
+          </div>
+          <div
+            className="d-flex align-items-center justify-content-center p-3 bg-grey-3"
+            style={{
+              borderRadius: '100px',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s ease-in-out',
+            }}
+            onClick={toggleSearch}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#e0e0e0')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f5f5f5')}
+          >
+            <FontAwesomeIcon icon={showSearch ? faTimes : faSearch} />
+          </div>
         </div>
-        <div
-          className="d-flex align-items-center justify-content-center p-3 bg-grey-3"
-          style={{
-            borderRadius: '100px',
-            cursor: 'pointer',
-            transition: 'background-color 0.2s ease-in-out',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#e0e0e0')}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f5f5f5')}
-        >
-          <FontAwesomeIcon icon={faSearch} />
-        </div>
+        
+        {/* Search Input */}
+        {showSearch && (
+          <div className="position-relative">
+            <input
+              type="text"
+              placeholder="Search conversations..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="form-control"
+              style={{
+                fontSize: '16px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: '1px solid #ddd'
+              }}
+              autoFocus
+            />
+          </div>
+        )}
       </div>
 
       {/* Conversation History */}
-      <ConversationHistory onDeleteConfirmRequest={onDeleteConfirmRequest} />
+      <ConversationHistory 
+        onDeleteConfirmRequest={onDeleteConfirmRequest} 
+        searchQuery={searchQuery}
+      />
 
       {/* Feedback Button */}
       <div className="mt-auto pt-3" style={{ borderTop: '1px solid #eee' }}>
