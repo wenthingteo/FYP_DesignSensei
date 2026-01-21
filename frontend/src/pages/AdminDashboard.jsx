@@ -16,8 +16,8 @@ function AdminDashboard() {
       const token = getAccessToken();
       const response = await axios.get(`${API_BASE}/api/admin/feedback/`, {
         headers: {
-          'Authorization': `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       if (response.data.success) {
@@ -69,8 +69,8 @@ function AdminDashboard() {
       const token = getAccessToken();
       await axios.delete(`${API_BASE}/api/admin/feedback/${feedbackId}/`, {
         headers: {
-          'Authorization': `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       // Remove from local state
