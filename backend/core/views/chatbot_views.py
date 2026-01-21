@@ -44,18 +44,7 @@ def get_or_create_test_user():
 
 
 class ChatbotAPIView(APIView):
-    
-    def get_authenticators(self):
-        """Skip JWT authentication in DEBUG mode for local development."""
-        if settings.DEBUG:
-            return []  # No authentication required
-        return super().get_authenticators()
-    
-    def get_permissions(self):
-        """Allow unauthenticated access in DEBUG mode for local development."""
-        if settings.DEBUG:
-            return [AllowAny()]
-        return [IsAuthenticated()]
+    permission_classes = [IsAuthenticated]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -305,7 +294,7 @@ class ChatbotAPIView(APIView):
                 fallback_response = client.chat.completions.create(
                     model="gpt-4.1-nano-2025-04-14",
                     messages=messages,
-                    max_tokens=150,
+                    max_tokens=400,
                     temperature=0.2,
                     timeout=5  # Fast timeout
                 )
@@ -347,7 +336,7 @@ class ChatbotAPIView(APIView):
                 hybrid_response = client.chat.completions.create(
                     model="gpt-4.1-nano-2025-04-14",
                     messages=messages,
-                    max_tokens=400,
+                    max_tokens=2000,
                     temperature=0.25,
                     timeout=10
                 )
@@ -389,14 +378,8 @@ class ChatbotAPIView(APIView):
         if not message_text:
             return Response({"error": "Message is required"}, status=400)
 
-        # Handle anonymous users in DEBUG mode - use test user
-        if request.user.is_authenticated:
-            user = request.user
-        elif settings.DEBUG:
-            user = get_or_create_test_user()
-            logger.info(f"Using test user for anonymous request in DEBUG mode")
-        else:
-            return Response({"error": "Authentication required"}, status=401)
+        # Use authenticated user
+        user = request.user
         
         # Create or fetch conversation
         if conversation_id:
@@ -632,13 +615,8 @@ class ChatbotAPIView(APIView):
         """Get all conversations and optionally messages from one"""
         conversation_id = request.query_params.get('cid')
 
-        # Handle anonymous users in DEBUG mode
-        if request.user.is_authenticated:
-            user = request.user
-        elif settings.DEBUG:
-            user = get_or_create_test_user()
-        else:
-            return Response({"error": "Authentication required"}, status=401)
+        # Use authenticated user
+        user = request.user
 
         conversations = Conversation.objects.filter(user=user).order_by('-created_at')
         serialized_conversations = ConversationSerializer(conversations, many=True).data
@@ -668,13 +646,8 @@ class ChatbotAPIView(APIView):
         if not conversation_id or not new_title:
             return Response({'error': 'Conversation ID and new title are required'}, status=400)
 
-        # Handle anonymous users in DEBUG mode
-        if request.user.is_authenticated:
-            user = request.user
-        elif settings.DEBUG:
-            user = get_or_create_test_user()
-        else:
-            return Response({"error": "Authentication required"}, status=401)
+        # Use authenticated user
+        user = request.user
 
         conversation = get_object_or_404(Conversation, id=conversation_id, user=user)
         conversation.title = new_title
@@ -689,13 +662,8 @@ class ChatbotAPIView(APIView):
         if not conversation_id:
             return Response({'error': 'Conversation ID is required'}, status=400)
 
-        # Handle anonymous users in DEBUG mode
-        if request.user.is_authenticated:
-            user = request.user
-        elif settings.DEBUG:
-            user = get_or_create_test_user()
-        else:
-            return Response({"error": "Authentication required"}, status=401)
+        # Use authenticated user
+        user = request.user
 
         conversation = get_object_or_404(Conversation, id=conversation_id, user=user)
         conversation.delete()
