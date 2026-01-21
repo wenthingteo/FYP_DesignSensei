@@ -42,6 +42,17 @@ class PromptManager:
         5. Returning the raw LLM response along with the classified intent.
         """
         
+        # Detect if user wants a short/brief response
+        import re
+        short_patterns = [
+            r'\b(in short|briefly|short|brief|quick|simple|one sentence|in a nutshell|tldr|tl;dr|summarize|summary|shortly)\b',
+            r'\b(explain.*simply|simply explain|just tell me|give me a quick)\b'
+        ]
+        wants_short = any(re.search(p, user_query.lower()) for p in short_patterns)
+        if wants_short:
+            response_length = ResponseLength.SHORT
+            logger.info(f"📝 User requested short response, switching to ResponseLength.SHORT")
+        
         # Step 1: Classify intent
         intent_result = self.intent_classifier.classify_intent(user_query, graphrag_results)
         intent_type = intent_result['question_type'] # Get the string value of the intent

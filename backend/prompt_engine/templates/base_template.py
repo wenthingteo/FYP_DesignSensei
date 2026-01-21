@@ -179,7 +179,8 @@ SHORT RESPONSE FORMAT:
 - Keep response concise (2-3 paragraphs maximum)
 - Focus on key points only with **bold** emphasis
 - Use bullet points for quick scanning
-- Include one brief example maximum""",
+- Include one brief example maximum
+- END with a one-sentence summary starting with "**In short:**" or "**Simply put:**\"""",
            
             ResponseLength.MEDIUM: """
 MEDIUM RESPONSE FORMAT:

@@ -148,9 +148,17 @@ class IntentClassifier:
         topic, t_conf, keywords = self._classify_topic(query)
 
         # If no software design keywords found AND topic confidence is low, mark as out-of-scope
-        if not keywords and t_conf < 0.3 and topic == SoftwareDesignTopic.GENERAL:
-            logger.info(f"No software design keywords found in query: '{user_query}' - marking as out-of-scope")
-            return self._make_result(QuestionType.OUT_OF_SCOPE_GENERAL, SoftwareDesignTopic.GENERAL, 0.9, 0.9)
+        # BUT be more conservative - require VERY low confidence to avoid false positives
+        if not keywords and t_conf < 0.2 and topic == SoftwareDesignTopic.GENERAL:
+            # Double-check: if the query contains common software/programming terms, don't mark as out-of-scope
+            software_terms = r"\b(code|coding|program|software|developer|development|class|function|method|object|variable|algorithm|data|system|api|database|server|client|web|app|application|test|debug|error|bug|performance|security|design|pattern|architecture|framework|library|module|package|interface|implement|refactor)\b"
+            if not re.search(software_terms, query, re.IGNORECASE):
+                logger.info(f"No software design keywords found in query: '{user_query}' - marking as out-of-scope")
+                return self._make_result(QuestionType.OUT_OF_SCOPE_GENERAL, SoftwareDesignTopic.GENERAL, 0.9, 0.9)
+            else:
+                logger.info(f"Query contains software terms despite low confidence, treating as GENERAL: '{user_query}'")
+                topic = SoftwareDesignTopic.GENERAL
+                t_conf = 0.4  # Boost confidence
 
         overall_conf = (q_conf + t_conf) / 2
         return self._make_result(q_type, topic, q_conf, t_conf, keywords, overall_conf)
