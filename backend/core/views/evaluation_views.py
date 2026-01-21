@@ -11,15 +11,28 @@ from core.models import EvaluationRecord, GroundTruth
 logger = logging.getLogger(__name__)
 
 
+def is_admin_user(user):
+    """Check if user has admin privileges"""
+    return user.is_staff or user.is_superuser
+
+
 class PerformanceReportView(APIView):
     """
     FYP Objective Demonstration: GraphRAG Performance Evaluation
     Endpoint to show that the system achieves accurate answer generation
+    Admin-only access.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """Generate comprehensive performance report"""
+        # Check admin privileges
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin privileges required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         try:
             eval_service = EvaluationService()
             report = eval_service.get_performance_report()
@@ -99,11 +112,19 @@ class EvaluationDashboardView(APIView):
     """
     Dashboard view for visualization of evaluation metrics
     Provides data for charts and graphs
+    Admin-only access
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """Get dashboard data for visualization"""
+        # Check admin privileges
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin privileges required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         try:
             # Mode distribution
             mode_distribution = []
@@ -179,11 +200,19 @@ class EvaluationDashboardView(APIView):
 class GroundTruthManagementView(APIView):
     """
     Manage ground truth database
+    Admin-only access
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """List all ground truths"""
+        # Check admin privileges
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin privileges required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         ground_truths = GroundTruth.objects.all().order_by('-created_at')
         
         data = []
@@ -206,6 +235,13 @@ class GroundTruthManagementView(APIView):
 
     def post(self, request):
         """Add new ground truth"""
+        # Check admin privileges
+        if not is_admin_user(request.user):
+            return Response(
+                {'error': 'Admin privileges required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         try:
             question = request.data.get('question')
             ground_truth = request.data.get('ground_truth')
