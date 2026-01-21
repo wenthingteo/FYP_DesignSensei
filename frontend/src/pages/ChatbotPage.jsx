@@ -134,8 +134,25 @@ const ChatbotPage = () => {
 
   // --- Scroll to bottom when new messages appear ---
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentMessages, typingMessageContent, errorState]);
+    // Only scroll if user is already near the bottom (within 100px)
+    // This prevents constant jumping during typing animation
+    const scrollContainer = messagesEndRef.current?.parentElement;
+    if (scrollContainer) {
+      const isNearBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 100;
+      if (isNearBottom || currentMessages.length === 0) {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [currentMessages, errorState]);
+  
+  // Separate effect for typing - scroll without smooth animation to avoid jumping
+  useEffect(() => {
+    if (isTyping && typingMessageContent) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+    }
+  }, [typingMessageContent, isTyping]);
 
   // --- Sidebar toggle logic ---
   useEffect(() => {
@@ -395,13 +412,13 @@ const ChatbotPage = () => {
           clearAllTimers();
         }, 55000); // 55 seconds timeout (backend is 50s + 5s buffer)
 
+        const token = getAccessToken();
         const response = await fetch(`${API_BASE}/api/chat/`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-CSRFToken": getCookie("csrftoken"),
+            "Authorization": `Bearer ${token}`,
           },
-          credentials: "include",
           signal: abortControllerRef.current.signal,
           body: JSON.stringify({
             content: messageContentToSend,
