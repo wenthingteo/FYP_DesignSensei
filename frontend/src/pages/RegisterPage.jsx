@@ -17,9 +17,9 @@ function RegisterPage() {
     e.preventDefault();
     setErrorMsg("");
 
-    // Validate email ends with .com
-    if (!email.toLowerCase().endsWith('.com')) {
-      setErrorMsg("Email must end with .com");
+    // Validate email contains @
+    if (!email.includes('@')) {
+      setErrorMsg("Please enter a valid email address");
       return;
     }
 

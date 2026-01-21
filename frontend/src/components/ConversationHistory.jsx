@@ -7,7 +7,7 @@ import axios from "axios";
 import API_BASE from "../config";
 import { getAccessToken } from "../utils/auth";
 
-function ConversationHistory({ onDeleteConfirmRequest }) {
+function ConversationHistory({ onDeleteConfirmRequest, searchQuery = "" }) {
   const { chatData, setChatData } = useGetChats();
   const { updateTrigger } = useSidebarUpdates();
   let conversations = chatData?.conversations ?? [];  
@@ -18,6 +18,12 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
+
+  // Filter conversations based on search query
+  const filteredConversations = conversations.filter(conv => 
+    conv.id !== "new" && 
+    conv.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -204,9 +210,12 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
       maxHeight: 'calc(100vh - 240px)',
       paddingRight: '4px'
     }}>
-      {conversations
-        .filter(conv => conv.id !== "new")
-        .map((conv) => {
+      {filteredConversations.length === 0 && searchQuery ? (
+        <div className="text-center text-muted py-3" style={{ fontSize: '14px' }}>
+          No conversations found
+        </div>
+      ) : (
+        filteredConversations.map((conv) => {
         const isActive = conv.id === currentId;
         const isEditing = editingId === conv.id;
 
@@ -335,7 +344,7 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
             )}
           </div>
         );
-      })}
+      }))}
     </div>
   );
 }
