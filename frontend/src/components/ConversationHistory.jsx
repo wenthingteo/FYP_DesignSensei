@@ -198,7 +198,12 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
   }
 
   return (
-    <div>
+    <div style={{ 
+      overflowY: 'auto', 
+      flexGrow: 1,
+      maxHeight: 'calc(100vh - 240px)',
+      paddingRight: '4px'
+    }}>
       {conversations
         .filter(conv => conv.id !== "new")
         .map((conv) => {
