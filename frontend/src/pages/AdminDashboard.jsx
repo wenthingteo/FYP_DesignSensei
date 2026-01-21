@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import API_BASE from "../config";
-import { getAccessToken, clearTokens } from "../utils/auth";
 import "./AdminDashboard.css";
 
 function AdminDashboard() {
@@ -12,11 +11,7 @@ function AdminDashboard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchFeedbacks();
-  }, []);
-
-  const fetchFeedbacks = async () => {
+  const fetchFeedbacks = useCallback(async () => {
     try {
       const token = getAccessToken();
       const response = await axios.get(`${API_BASE}/api/admin/feedback/`, {
@@ -44,7 +39,11 @@ function AdminDashboard() {
       }
       setLoading(false);
     }
-  };
+  }, [navigate]);
+
+  useEffect(() => {
+    fetchFeedbacks();
+  }, [fetchFeedbacks]);
 
   const handleDelete = async (feedbackId) => {
     if (!window.confirm("Are you sure you want to delete this feedback?")) {
