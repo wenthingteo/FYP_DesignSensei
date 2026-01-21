@@ -1,8 +1,9 @@
 from django.contrib import auth
 from django.contrib.auth.models import User
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
+from django.middleware.csrf import get_token
 import json
 
 @login_required
@@ -10,6 +11,7 @@ def ping(request):
     return JsonResponse({'message': 'User is authenticated', 'username': request.user.username})
 
 @csrf_exempt
+@ensure_csrf_cookie
 def login(request):
     if request.method == 'POST':
         try:
@@ -22,13 +24,17 @@ def login(request):
         user = auth.authenticate(request, username=username, password=password)
         if user is not None:
             auth.login(request, user)
-            return JsonResponse({'message': 'Login successful', 'username': user.username})
+            response = JsonResponse({'message': 'Login successful', 'username': user.username})
+            # Ensure CSRF cookie is set in response
+            get_token(request)
+            return response
         else:
             return JsonResponse({'error': 'Invalid credentials'}, status=401)
 
     return JsonResponse({'error': 'POST method required'}, status=405)
 
 @csrf_exempt
+@ensure_csrf_cookie
 def register(request):
     if request.method == 'POST':
         try:
@@ -48,7 +54,10 @@ def register(request):
 
         user = User.objects.create_user(username=username, email=email, password=password1)
         auth.login(request, user)
-        return JsonResponse({'message': 'Registration successful', 'username': user.username})
+        response = JsonResponse({'message': 'Registration successful', 'username': user.username})
+        # Ensure CSRF cookie is set in response
+        get_token(request)
+        return response
 
     return JsonResponse({'error': 'POST method required'}, status=405)
 
@@ -58,3 +67,12 @@ def logout(request):
         auth.logout(request)
         return JsonResponse({'message': 'Logout successful'})
     return JsonResponse({'error': 'User not logged in'}, status=400)
+
+# New endpoint to get CSRF token
+@ensure_csrf_cookie
+def get_csrf_token(request):
+    """Endpoint to get CSRF token for authenticated users"""
+    return JsonResponse({
+        'csrfToken': get_token(request),
+        'detail': 'CSRF cookie set'
+    })

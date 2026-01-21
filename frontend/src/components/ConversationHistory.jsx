@@ -4,6 +4,8 @@ import useSidebarUpdates from '../hooks/useSidebarUpdates';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEllipsisVertical, faPen, faTrash, faCheck, faTimes } from "@fortawesome/free-solid-svg-icons";
 import axios from "axios";
+import API_BASE from "../config";
+import { getAccessToken } from "../utils/auth";
 
 function ConversationHistory({ onDeleteConfirmRequest }) {
   const { chatData, setChatData } = useGetChats();
@@ -77,8 +79,11 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
     }
 
     try {
-      const res = await axios.get(`http://127.0.0.1:8000/api/conversations/${conv.id}/messages/`, {
-        withCredentials: true,
+      const token = getAccessToken();
+      const res = await axios.get(`${API_BASE}/api/conversations/${conv.id}/messages/`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
       setChatData((prev) => ({
         ...prev,
@@ -115,15 +120,15 @@ function ConversationHistory({ onDeleteConfirmRequest }) {
     try {
       console.log(`Attempting to rename conversation ${convId} to "${editingTitle.trim()}"`);
       
+      const token = getAccessToken();
       const response = await axios.put(
-        `http://127.0.0.1:8000/api/conversations/${convId}/`,
+        `${API_BASE}/api/conversations/${convId}/`,
         { 
           title: editingTitle.trim()
         },
         { 
-          withCredentials: true, 
           headers: { 
-            'X-CSRFToken': getCookie('csrftoken'), 
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json' 
           } 
         }

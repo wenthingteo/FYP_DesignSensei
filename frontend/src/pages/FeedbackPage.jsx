@@ -3,6 +3,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faHome, faSignOutAlt, faStar, faBug, faLightbulb, faCommentDots, faCheck } from '@fortawesome/free-solid-svg-icons';
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import API_BASE from "../config";
+import { getAccessToken, clearTokens } from "../utils/auth";
 
 const FeedbackPage = () => {
   const [formData, setFormData] = useState({
@@ -42,18 +44,18 @@ const FeedbackPage = () => {
     const csrfToken = getCookie('csrftoken');
 
     try {
-      const response = await axios.post("http://127.0.0.1:8000/api/feedback/", 
+      const token = getAccessToken();
+      const response = await axios.post(`${API_BASE}/api/feedback/`, 
         { 
           comment: formData.feedback,
           rating: formData.rating,
           feedbackType: formData.feedbackType || 'general',
           name: formData.name,
-          email: formData.email
-        }, 
+          email: formData.email,
+        },
         {
-          withCredentials: true,
           headers: {
-            'X-CSRFToken': csrfToken,
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
         }
@@ -88,14 +90,8 @@ const FeedbackPage = () => {
 
   const handleLogout = async () => {
     try {
-      await axios.post("http://127.0.0.1:8000/api/logout/", {}, {
-        withCredentials: true,
-        headers: {
-          'X-CSRFToken': getCookie('csrftoken'),
-        },
-      });
-      document.cookie = 'sessionid=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-      document.cookie = 'csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      await axios.post(`${API_BASE}/api/logout/`);
+      clearTokens();
       navigate('/login');
     } catch (error) {
       console.error("Logout failed:", error);

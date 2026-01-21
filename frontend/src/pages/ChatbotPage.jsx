@@ -1,6 +1,8 @@
 import React, { useContext, useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from 'react-router-dom';
 import axios from "axios";
+import API_BASE from "../config";
+import { getAccessToken, clearTokens } from "../utils/auth";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBars, faPaperPlane, faSignOutAlt } from '@fortawesome/free-solid-svg-icons';
 import Lottie from "lottie-react";
@@ -218,13 +220,13 @@ const ChatbotPage = () => {
     }, 55000);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/chat/", {
+      const token = getAccessToken();
+      const response = await fetch(`${API_BASE}/api/chat/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-CSRFToken": getCookie("csrftoken"),
+          "Authorization": `Bearer ${token}`,
         },
-        credentials: "include",
         signal: abortControllerRef.current.signal,
         body: JSON.stringify({
           content: lastUserMessage,
@@ -393,7 +395,7 @@ const ChatbotPage = () => {
           clearAllTimers();
         }, 55000); // 55 seconds timeout (backend is 50s + 5s buffer)
 
-        const response = await fetch("http://127.0.0.1:8000/api/chat/", {
+        const response = await fetch(`${API_BASE}/api/chat/`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -570,15 +572,15 @@ const ChatbotPage = () => {
     if (!conversationToDeleteId) return;
 
     try {
+      const token = getAccessToken();
       const response = await fetch(
-        `http://127.0.0.1:8000/api/conversations/${conversationToDeleteId}/`,
+        `${API_BASE}/api/conversations/${conversationToDeleteId}/`,
         {
           method: 'DELETE',
           headers: {
-            'X-CSRFToken': getCookie('csrftoken'),
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
-          },
-          credentials: 'include'
+          }
         }
       );
 
@@ -606,7 +608,8 @@ const ChatbotPage = () => {
   // --- Logout ---
   const handleLogout = async () => {
     try {
-      await axios.post('http://127.0.0.1:8000/api/logout/', {}, { withCredentials: true });
+      await axios.post(`${API_BASE}/api/logout/`);
+      clearTokens();
       setChatData({
         conversations: [],
         messages: [],
@@ -626,8 +629,9 @@ const ChatbotPage = () => {
         ref={sidebarRef}
         className="position-fixed h-100 bg-light shadow"
         style={{
+          width: window.innerWidth <= 768 ? "85vw" : "350px",
           width: "350px",
-          left: sidebarOpen ? "0" : "-400px",
+          left: sidebarOpen ? "0" : "-100%",
           transition: "left 0.3s ease-in-out",
           zIndex: 1000,
         }}

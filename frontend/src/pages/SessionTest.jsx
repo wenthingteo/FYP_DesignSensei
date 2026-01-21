@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import API_BASE from '../config';
 
 const SessionTest = () => {
     const [sessionInfo, setSessionInfo] = useState(null);
@@ -6,7 +7,7 @@ const SessionTest = () => {
 
     const testSession = async () => {
         try {
-            const response = await fetch('http://127.0.0.1:8000/api/auth/debug/', {
+            const response = await fetch(`${API_BASE}/api/auth/debug/`, {
                 method: 'GET',
                 credentials: 'include',
                 headers: {
@@ -23,7 +24,7 @@ const SessionTest = () => {
 
     const testAuth = async () => {
         try {
-            const response = await fetch('http://127.0.0.1:8000/api/auth/ping/', {
+            const response = await fetch(`${API_BASE}/api/auth/ping/`, {
                 method: 'GET',
                 credentials: 'include',
                 headers: {

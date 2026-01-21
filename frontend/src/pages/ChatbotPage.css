@@ -49,24 +49,24 @@
 
 /* Markdown Content Styling - Smaller Headers */
 .markdown-content h1 {
-  font-size: 1.5rem !important;
-  font-weight: 600;
-  margin-top: 1rem;
-  margin-bottom: 0.75rem;
-}
-
-.markdown-content h2 {
-  font-size: 1.35rem !important;
+  font-size: 1.25rem !important;
   font-weight: 600;
   margin-top: 0.875rem;
   margin-bottom: 0.625rem;
 }
 
-.markdown-content h3 {
-  font-size: 1.2rem !important;
+.markdown-content h2 {
+  font-size: 1.15rem !important;
   font-weight: 600;
   margin-top: 0.75rem;
   margin-bottom: 0.5rem;
+}
+
+.markdown-content h3 {
+  font-size: 1.05rem !important;
+  font-weight: 600;
+  margin-top: 0.625rem;
+  margin-bottom: 0.375rem;
 }
 
 /* ... and so on for h4, h5, h6 */

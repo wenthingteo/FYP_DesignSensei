@@ -1,6 +1,9 @@
 import React, { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChatContext } from "../context/ChatContext";
+import API_BASE from "../config";
+import axios from "axios";
+import { setTokens } from "../utils/auth";
 
 function LoginPage() {
   const [username, setUsername] = useState("");
@@ -28,27 +31,24 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/login/", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username, password }),
+      const response = await axios.post(`${API_BASE}/api/login/`, {
+        username,
+        password
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        console.log("Login success:", data);
+      if (response.status === 200) {
+        const { access, refresh, username: user } = response.data;
+        
+        // Store JWT tokens
+        setTokens(access, refresh);
+        
+        console.log("Login success:", user);
         await fetchChats();
         navigate("/chatbot");
-      } else {
-        setErrorMsg(data.error || "Invalid credentials.");
       }
     } catch (error) {
       console.error("Login error:", error);
-      setErrorMsg("Something went wrong. Please try again.");
+      setErrorMsg(error.response?.data?.error || "Invalid credentials.");
     } finally {
       setLoading(false);
     }
@@ -60,44 +60,41 @@ function LoginPage() {
     setAdminLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/login/", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username: adminUsername, password: adminPassword }),
+      const response = await axios.post(`${API_BASE}/api/login/`, {
+        username: adminUsername,
+        password: adminPassword
       });
 
-      const data = await response.json();
+      if (response.status === 200) {
+        const { access, refresh, username: user } = response.data;
+        
+        // Store JWT tokens
+        setTokens(access, refresh);
 
-      if (response.ok) {
         // Now check if user has admin access by trying to fetch feedback
         try {
-          const feedbackResponse = await fetch("http://127.0.0.1:8000/api/admin/feedback/", {
-            method: "GET",
-            credentials: "include",
+          const feedbackResponse = await axios.get(`${API_BASE}/api/admin/feedback/`, {
+            headers: {
+              'Authorization': `Bearer ${access}`
+            }
           });
 
-          if (feedbackResponse.ok) {
+          if (feedbackResponse.status === 200) {
             // User is admin, navigate to dashboard
             setShowAdminModal(false);
             navigate("/admin/feedback");
-          } else if (feedbackResponse.status === 403) {
+          }
+        } catch (feedbackError) {
+          if (feedbackError.response?.status === 403) {
             setAdminError("Access denied. Admin privileges required.");
           } else {
             setAdminError("Failed to verify admin access.");
           }
-        } catch (error) {
-          console.error("Admin verification error:", error);
-          setAdminError("Failed to verify admin access.");
         }
-      } else {
-        setAdminError(data.error || "Invalid credentials");
       }
     } catch (error) {
       console.error("Admin login error:", error);
-      setAdminError("Something went wrong. Please try again.");
+      setAdminError(error.response?.data?.error || "Invalid credentials");
     } finally {
       setAdminLoading(false);
     }
@@ -150,7 +147,7 @@ function LoginPage() {
     setResetLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/password-reset/request/", {
+      const response = await fetch(`${API_BASE}/api/password-reset/request/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

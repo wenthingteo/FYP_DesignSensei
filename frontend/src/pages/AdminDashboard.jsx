@@ -13,8 +13,11 @@ function AdminDashboard() {
 
   const fetchFeedbacks = useCallback(async () => {
     try {
+      const token = getAccessToken();
       const response = await axios.get(`${API_BASE}/api/admin/feedback/`, {
-        withCredentials: true,
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       if (response.data.success) {
@@ -42,32 +45,16 @@ function AdminDashboard() {
     fetchFeedbacks();
   }, [fetchFeedbacks]);
 
-  const getCookie = (name) => {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-      const cookies = document.cookie.split(';');
-      for (let i = 0; i < cookies.length; i++) {
-        const cookie = cookies[i].trim();
-        if (cookie.substring(0, name.length + 1) === (name + '=')) {
-          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-          break;
-        }
-      }
-    }
-    return cookieValue;
-  };
-
   const handleDelete = async (feedbackId) => {
     if (!window.confirm("Are you sure you want to delete this feedback?")) {
       return;
     }
 
     try {
-      const csrfToken = getCookie('csrftoken');
+      const token = getAccessToken();
       await axios.delete(`${API_BASE}/api/admin/feedback/${feedbackId}/`, {
-        withCredentials: true,
         headers: {
-          'X-CSRFToken': csrfToken,
+          Authorization: `Bearer ${token}`,
         },
       });
 

@@ -24,30 +24,6 @@ const Sidebar = ({ onDeleteConfirmRequest }) => {
       <div className="d-flex align-items-center justify-content-between mb-4">
         <div className="d-flex align-items-center gap-2">
           <div style={{ fontSize: '20px', fontWeight: '600', color: '#333' }}>Software Design Sensei</div>
-          <div
-            className="rounded-circle overflow-hidden justify-content-between"
-            style={{
-              width: '40px',
-              height: '40px',
-              flexShrink: 0,
-              border: '2px solid #ccc',
-              backgroundColor: '#f8f9fa',
-            }}
-          >
-            <img
-              src={usagi}
-              alt="profile avatar"
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-              }}
-              onError={(e) => {
-                e.currentTarget.src = "https://via.placeholder.com/40";
-              }}
-            />
-          </div>
         </div>
       </div>
 

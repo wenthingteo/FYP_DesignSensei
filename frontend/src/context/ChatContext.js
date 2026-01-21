@@ -1,5 +1,7 @@
 import { createContext, useState, useEffect, useCallback } from "react";
 import axios from "axios";
+import API_BASE from "../config";
+import { getAccessToken } from "../utils/auth";
 
 export const ChatContext = createContext();
 
@@ -29,14 +31,14 @@ export const ChatProvider = ({ children }) => {
     return cookieValue;
   }
 
-  const fetchChats = useCallback(async () => { // Wrap fetchChats in useCallback
-    setLoading(true); // Set loading to true when fetching starts
-    setError(null);    // Clear any previous errors
+  const fetchChats = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const response = await axios.get("http://127.0.0.1:8000/api/chat/", {
-        withCredentials: true,
+      const token = getAccessToken();
+      const response = await axios.get(`${API_BASE}/api/chat/`, {
         headers: {
-          "X-CSRFToken": getCookie("csrftoken"),
+          "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json"
         }
       });
