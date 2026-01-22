@@ -15,6 +15,7 @@ from django.conf import settings
 
 from core.models import Conversation, Message
 from core.serializers import MessageSerializer, ConversationSerializer
+from core.response_processor import ResponseProcessor
 
 from prompt_engine.intent_classifier import IntentClassifier
 from prompt_engine.managers.prompt_manager import PromptManager
@@ -552,6 +553,19 @@ class ChatbotAPIView(APIView):
         # Extract final answer from processed_result
         final_answer = processed_result.get("response", "")
         hybrid_mode = processed_result.get("metadata", {}).get("mode", "UNKNOWN")
+
+        # ========================================
+        # POST-PROCESS RESPONSE (Generate Module)
+        # ========================================
+        try:
+            final_answer = ResponseProcessor.process(
+                response=final_answer,
+                language_hint="java"  # Primary language for code examples
+            )
+            logger.info("Response post-processing completed successfully")
+        except Exception as e:
+            logger.error(f"Response processing failed: {e}, using raw response")
+            # Continue with raw response if processing fails
 
         # Save evaluation asynchronously
         try:
