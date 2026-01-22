@@ -61,6 +61,9 @@ class ResponseProcessor:
         # 5. Clean up excessive whitespace
         response = ResponseProcessor._clean_whitespace(response)
         
+        # 6. Truncate long responses for device-friendly display
+        response = ResponseProcessor._truncate_for_display(response)
+        
         logger.info(f"Response processed successfully (final length: {len(response)} chars)")
         return response.strip()
 
